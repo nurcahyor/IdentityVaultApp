@@ -27,5 +27,9 @@
                 <action android:name="com.identityvault.app.HOOK_ACTIVE" />
             </intent-filter>
         </receiver>
+        <provider
+            android:name=".identity.IdentityProfileProvider"
+            android:authorities="com.identityvault.app.profile"
+            android:exported="true" />
     </application>
 </manifest>

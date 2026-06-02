@@ -1,0 +1,2 @@
+-keep class com.identityvault.hook.MainHook { *; }
+-keep class com.identityvault.hook.** { *; }

@@ -20,6 +20,7 @@ class StatusViewModel(context: Context) {
     private val magiskChecker = MagiskChecker(appContext)
     private val generator = IdentityProfileGenerator()
     private val validator = IdentityValidator()
+    private val prefs = appContext.getSharedPreferences("profile_apply", Context.MODE_PRIVATE)
 
     var rootStatus: RootStatus = rootChecker.check()
         private set
@@ -27,11 +28,14 @@ class StatusViewModel(context: Context) {
         private set
     var magiskStatus: String = magiskChecker.check()
         private set
+    var profileApplied: Boolean = prefs.getBoolean("applied", false)
+        private set
 
     fun refresh() {
         rootStatus = rootChecker.check()
         lsposedStatus = lsposedChecker.check()
         magiskStatus = magiskChecker.check()
+        profileApplied = prefs.getBoolean("applied", false)
         logRepository.add("Status refreshed")
     }
 
@@ -49,7 +53,22 @@ class StatusViewModel(context: Context) {
     fun generateProfile() {
         val profile = generator.generate()
         identityRepository.saveProfile(profile)
+        profileApplied = false
+        prefs.edit().putBoolean("applied", false).apply()
         logRepository.add("Generated identity profile: ${profile.name}")
+    }
+
+    fun generateProfileObject() = generator.generate(identityRepository.getProfile().name)
+
+    fun markProfileDirty() {
+        profileApplied = false
+        prefs.edit().putBoolean("applied", false).apply()
+    }
+
+    fun applyProfile() {
+        profileApplied = true
+        prefs.edit().putBoolean("applied", true).putLong("applied_at", System.currentTimeMillis()).apply()
+        logRepository.add("Profile applied for hook provider")
     }
 
     fun validateCurrent(): Map<String, String> = validator.validate(identityRepository.getProfile())
