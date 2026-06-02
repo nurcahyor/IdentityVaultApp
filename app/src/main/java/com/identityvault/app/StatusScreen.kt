@@ -2,6 +2,7 @@ package com.identityvault.app
 
 import android.app.AlertDialog
 import android.content.Context
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.graphics.Typeface
 import android.text.InputType
@@ -11,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -33,38 +35,47 @@ class StatusScreen(
         fun onShowMenu(anchor: View)
     }
 
-    private val bg = Color.rgb(12, 16, 24)
-    private val panelBg = Color.rgb(18, 24, 34)
-    private val rowStroke = Color.rgb(39, 48, 62)
-    private val textColor = Color.rgb(226, 232, 240)
-    private val muted = Color.rgb(145, 158, 176)
-    private val quiet = Color.rgb(96, 110, 128)
-    private val accent = Color.rgb(45, 190, 176)
-    private val disabled = Color.rgb(86, 98, 116)
+    private val bg = Color.rgb(13, 17, 24)
+    private val panelBg = Color.rgb(19, 24, 32)
+    private val bottomBg = Color.rgb(15, 20, 28)
+    private val line = Color.rgb(36, 44, 56)
+    private val textColor = Color.rgb(225, 231, 239)
+    private val muted = Color.rgb(142, 153, 168)
+    private val quiet = Color.rgb(96, 108, 124)
+    private val accent = Color.rgb(69, 178, 166)
+    private val iconIdle = Color.rgb(118, 130, 146)
 
-    private lateinit var root: LinearLayout
+    private lateinit var content: LinearLayout
     private val fieldRows = linkedMapOf<String, FieldRow>()
-    private lateinit var profileName: EditText
     private var buildProfile: BuildPropProfile = BuildPropProfile.default()
-    private var buildEnabled: Boolean = true
+    private var buildEnabled = true
 
     fun create(): View {
-        val scroll = ScrollView(context).apply { setBackgroundColor(bg) }
-        root = LinearLayout(context).apply {
+        val shell = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(22, 20, 22, 24)
             setBackgroundColor(bg)
         }
-        scroll.addView(root)
+        val scroll = ScrollView(context).apply {
+            setBackgroundColor(bg)
+            isFillViewport = false
+        }
+        content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 16)
+            setBackgroundColor(bg)
+        }
+        scroll.addView(content)
+        shell.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        shell.addView(bottomActions())
         render()
-        return scroll
+        return shell
     }
 
     fun render() {
-        root.removeAllViews()
+        content.removeAllViews()
         fieldRows.clear()
         topBar()
-        profilePanel(viewModel.identityRepository.getProfile())
+        fieldList(viewModel.identityRepository.getProfile())
     }
 
     private fun topBar() {
@@ -75,46 +86,35 @@ class StatusScreen(
         val titleBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         titleBox.addView(TextView(context).apply {
             text = "IdentityVault"
-            textSize = 21f
+            textSize = 19f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(textColor)
         })
         titleBox.addView(TextView(context).apply {
             text = "Identity profile testing module"
-            textSize = 12f
+            textSize = 11f
             setTextColor(muted)
         })
         row.addView(titleBox, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(outlineButton("Detector").apply { setOnClickListener { DetectorBottomSheet(context).show() } })
-        row.addView(outlineButton("...").apply { setOnClickListener { callbacks.onShowMenu(this) } })
-        root.addView(row)
+        row.addView(topButton("Detector").apply { setOnClickListener { DetectorBottomSheet(context).show() } })
+        row.addView(topButton("...").apply { setOnClickListener { callbacks.onShowMenu(this) } })
+        content.addView(row)
     }
 
-    private fun profilePanel(profile: IdentityProfile) {
+    private fun fieldList(profile: IdentityProfile) {
         buildProfile = profile.buildProp
         buildEnabled = profile.buildPropEnabled
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 14, 16, 16)
+            setPadding(14, 10, 14, 12)
             background = android.graphics.drawable.GradientDrawable().apply {
                 setColor(panelBg)
-                cornerRadius = 8f
+                cornerRadius = 7f
             }
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                setMargins(0, 16, 0, 0)
+                setMargins(0, 14, 0, 0)
             }
         }
-        profileName = EditText(context).apply {
-            hint = "Profile name"
-            setText(profile.name)
-            setSingleLine(true)
-            textSize = 14f
-            setTextColor(textColor)
-            setHintTextColor(quiet)
-            backgroundTintList = android.content.res.ColorStateList.valueOf(rowStroke)
-        }
-        panel.addView(profileName)
-
         addField(panel, "IMEI", profile.imei)
         addField(panel, "Android ID", profile.androidId)
         addField(panel, "GSF ID", profile.gsfId)
@@ -129,77 +129,67 @@ class StatusScreen(
         addField(panel, "SIM Sub IDs", profile.simSubIds)
         addField(panel, "Mobile No", profile.mobileNo)
         addField(panel, "SIM Operator", profile.simOperator)
-        addBuildPropRow(panel)
-        addBottomButtons(panel)
-        root.addView(panel)
+        addBuildProp(panel)
+        content.addView(panel)
     }
 
     private fun addField(parent: LinearLayout, label: String, field: IdentityFieldState) {
-        val box = fieldBox()
+        val box = rowBox()
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(TextView(context).apply {
-            text = label
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(textColor)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val random = iconButton("R", true).apply { setOnClickListener { randomizeField(label) } }
-        val enable = iconButton("P", field.enabled)
+        header.addView(labelView(label), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(iconButton(R.drawable.ic_shuffle, true).apply { setOnClickListener { randomizeField(label) } })
         var enabled = field.enabled
-        enable.setOnClickListener {
+        val toggle = iconButton(R.drawable.ic_power, enabled)
+        toggle.setOnClickListener {
             enabled = !enabled
-            styleIcon(enable, enabled)
+            styleIcon(toggle, enabled)
             fieldRows[label] = fieldRows[label]!!.copy(enabled = enabled)
         }
-        header.addView(random)
-        header.addView(enable)
-        val value = valueText(field.value)
+        header.addView(toggle)
+        val value = valueView(field.value)
         box.addView(header)
         box.addView(value)
         parent.addView(box)
-        fieldRows[label] = FieldRow(label, value, enabled, enable)
+        fieldRows[label] = FieldRow(value, enabled)
     }
 
-    private fun addBuildPropRow(parent: LinearLayout) {
-        val box = fieldBox()
+    private fun addBuildProp(parent: LinearLayout) {
+        val box = rowBox().apply { setOnClickListener { showBuildPropDialog() } }
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        header.addView(TextView(context).apply {
-            text = "Build Prop"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(textColor)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(iconButton("D", true).apply { setOnClickListener { showBuildPropDialog(openPreset = true) } })
-        header.addView(iconButton("T", true).apply { setOnClickListener { showBuildPropDialog(openPreset = false) } })
-        val enable = iconButton("P", buildEnabled).apply {
-            setOnClickListener {
-                buildEnabled = !buildEnabled
-                styleIcon(this, buildEnabled)
-            }
+        header.addView(labelView("Build Prop"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(iconButton(R.drawable.ic_preset, true).apply { setOnClickListener { showBuildPropDialog() } })
+        header.addView(iconButton(R.drawable.ic_paste, true).apply { setOnClickListener { showBuildPropDialog() } })
+        val toggle = iconButton(R.drawable.ic_power, buildEnabled)
+        toggle.setOnClickListener {
+            buildEnabled = !buildEnabled
+            styleIcon(toggle, buildEnabled)
         }
-        header.addView(enable)
-        val summary = valueText("${buildProfile.brand} ${buildProfile.model} / Android ${buildProfile.versionRelease}")
-        box.setOnClickListener { showBuildPropDialog(openPreset = true) }
+        header.addView(toggle)
         box.addView(header)
-        box.addView(summary)
+        box.addView(valueView(buildProfile.fingerprint))
+        box.addView(TextView(context).apply {
+            text = "Android ${buildProfile.versionRelease}"
+            textSize = 12f
+            setTextColor(quiet)
+            setPadding(0, 2, 0, 0)
+        })
         parent.addView(box)
     }
 
-    private fun addBottomButtons(parent: LinearLayout) {
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 14, 0, 0)
-        }
-        row.addView(primaryButton("Generate All").apply { setOnClickListener { generateAllActive() } }, LinearLayout.LayoutParams(0, 42, 1f))
-        row.addView(primaryButton("Save").apply { setOnClickListener { saveProfile() } }, LinearLayout.LayoutParams(0, 42, 1f))
-        row.addView(primaryButton("Apply").apply { setOnClickListener { applyProfile() } }, LinearLayout.LayoutParams(0, 42, 1f))
-        parent.addView(row)
+    private fun bottomActions(): LinearLayout = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER
+        setPadding(14, 10, 14, 12)
+        setBackgroundColor(bottomBg)
+        addView(actionButton("Generate All").apply { setOnClickListener { generateAllActive() } }, LinearLayout.LayoutParams(0, 42, 1f).apply { setMargins(0, 0, 7, 0) })
+        addView(actionButton("Save").apply { setOnClickListener { saveProfile() } }, LinearLayout.LayoutParams(0, 42, 1f).apply { setMargins(7, 0, 7, 0) })
+        addView(actionButton("Apply").apply { setOnClickListener { applyProfile() } }, LinearLayout.LayoutParams(0, 42, 1f).apply { setMargins(7, 0, 0, 0) })
     }
 
     private fun randomizeField(label: String) {
@@ -250,19 +240,13 @@ class StatusScreen(
         render()
     }
 
-    private fun showBuildPropDialog(openPreset: Boolean) {
+    private fun showBuildPropDialog() {
         var selected = buildProfile
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(26, 8, 26, 0)
+            setPadding(24, 4, 24, 0)
         }
-        val presetTitle = TextView(context).apply {
-            text = "Preset"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(30, 41, 59))
-        }
-        container.addView(presetTitle)
+        container.addView(dialogTitle("Preset"))
         presets().forEach { preset ->
             container.addView(Button(context).apply {
                 text = "${preset.brand} ${preset.model} Android ${preset.versionRelease}"
@@ -273,30 +257,21 @@ class StatusScreen(
                 }
             })
         }
-        val pasteTitle = TextView(context).apply {
-            text = "Paste Manual"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(Color.rgb(30, 41, 59))
-            setPadding(0, 12, 0, 0)
-        }
+        container.addView(dialogTitle("Paste Manual").apply { setPadding(0, 12, 0, 4) })
         val paste = EditText(context).apply {
-            minLines = 7
-            maxLines = 10
+            minLines = 5
+            maxLines = 8
             gravity = Gravity.TOP
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            hint = "ro.build.fingerprint=...\nro.product.brand=...\nro.product.model=..."
-            setText(if (openPreset) "" else buildToText(buildProfile))
+            hint = "Paste fingerprint or build.prop block"
         }
-        container.addView(pasteTitle)
         container.addView(paste)
         AlertDialog.Builder(context)
             .setTitle("Build Prop")
             .setView(ScrollView(context).apply { addView(container) })
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save") { _, _ ->
-                val parsed = parseBuildProp(paste.text.toString(), selected)
-                buildProfile = parsed
+                buildProfile = parseBuildProp(paste.text.toString(), selected)
                 saveProfile(showToast = false)
                 render()
             }
@@ -333,7 +308,7 @@ class StatusScreen(
             return IdentityFieldState(row?.value?.text?.toString()?.trim().orEmpty(), row?.enabled == true)
         }
         return IdentityProfile(
-            name = profileName.text.toString().trim().ifBlank { "Default Profile" },
+            name = viewModel.identityRepository.getProfile().name.ifBlank { "Default Profile" },
             imei = field("IMEI"),
             serial = field("Serial"),
             hardwareId = field("Hardware ID"),
@@ -378,72 +353,83 @@ class StatusScreen(
         render()
     }
 
-    private fun fieldBox(): LinearLayout = LinearLayout(context).apply {
+    private fun rowBox(): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(0, 10, 0, 10)
+        setPadding(10, 8, 10, 8)
         background = android.graphics.drawable.GradientDrawable().apply {
             setColor(Color.TRANSPARENT)
-            setStroke(1, rowStroke)
-            cornerRadius = 6f
+            setStroke(1, line)
+            cornerRadius = 5f
         }
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            setMargins(0, 8, 0, 0)
+            setMargins(0, 7, 0, 0)
         }
-        setPadding(12, 9, 12, 9)
     }
 
-    private fun valueText(value: String): TextView = TextView(context).apply {
+    private fun labelView(label: String): TextView = TextView(context).apply {
+        text = label
+        textSize = 13.5f
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(textColor)
+    }
+
+    private fun valueView(value: String): TextView = TextView(context).apply {
         text = value
-        textSize = 13f
+        textSize = 12.5f
         setTextColor(muted)
         setSingleLine(true)
         ellipsize = TextUtils.TruncateAt.END
-        setPadding(0, 4, 0, 0)
+        setPadding(0, 3, 0, 0)
     }
 
-    private fun iconButton(label: String, active: Boolean): TextView = TextView(context).apply {
-        text = label
-        textSize = 12f
-        typeface = Typeface.DEFAULT_BOLD
-        gravity = Gravity.CENTER
-        styleIcon(this, active)
-        layoutParams = LinearLayout.LayoutParams(34, 30).apply { setMargins(6, 0, 0, 0) }
-    }
-
-    private fun styleIcon(view: TextView, active: Boolean) {
-        view.setTextColor(if (active) accent else disabled)
-        view.background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(Color.rgb(15, 20, 30))
-            setStroke(1, if (active) Color.rgb(35, 118, 110) else Color.rgb(48, 58, 72))
-            cornerRadius = 6f
+    private fun iconButton(icon: Int, active: Boolean): ImageButton = ImageButton(context).apply {
+        setImageResource(icon)
+        scaleType = android.widget.ImageView.ScaleType.CENTER
+        background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(Color.TRANSPARENT)
+            cornerRadius = 5f
         }
+        styleIcon(this, active)
+        layoutParams = LinearLayout.LayoutParams(30, 28).apply { setMargins(5, 0, 0, 0) }
     }
 
-    private fun outlineButton(label: String): Button = Button(context).apply {
+    private fun styleIcon(button: ImageButton, active: Boolean) {
+        button.imageTintList = ColorStateList.valueOf(if (active) accent else iconIdle)
+    }
+
+    private fun topButton(label: String): Button = Button(context).apply {
         text = label
-        textSize = 12f
+        textSize = 11.5f
         setAllCaps(false)
         minHeight = 0
         minWidth = 0
-        setPadding(12, 5, 12, 5)
-        setTextColor(accent)
+        setPadding(10, 4, 10, 4)
+        setTextColor(muted)
         background = android.graphics.drawable.GradientDrawable().apply {
             setColor(Color.TRANSPARENT)
-            setStroke(1, Color.rgb(35, 92, 91))
-            cornerRadius = 6f
+            setStroke(1, line)
+            cornerRadius = 5f
         }
     }
 
-    private fun primaryButton(label: String): Button = Button(context).apply {
+    private fun actionButton(label: String): Button = Button(context).apply {
         text = label
         textSize = 12f
         typeface = Typeface.DEFAULT_BOLD
         setAllCaps(false)
-        setTextColor(Color.rgb(5, 18, 22))
+        setTextColor(textColor)
         background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(accent)
-            cornerRadius = 7f
+            setColor(Color.rgb(25, 33, 44))
+            setStroke(1, Color.rgb(47, 59, 73))
+            cornerRadius = 6f
         }
+    }
+
+    private fun dialogTitle(text: String): TextView = TextView(context).apply {
+        this.text = text
+        textSize = 14f
+        typeface = Typeface.DEFAULT_BOLD
+        setTextColor(Color.rgb(30, 41, 59))
     }
 
     private fun presets(): List<BuildPropProfile> = listOf(
@@ -480,25 +466,13 @@ class StatusScreen(
         )
     )
 
-    private fun buildToText(build: BuildPropProfile): String = listOf(
-        "ro.build.fingerprint=${build.fingerprint}",
-        "ro.product.brand=${build.brand}",
-        "ro.product.model=${build.model}",
-        "ro.product.manufacturer=${build.manufacturer}",
-        "ro.product.device=${build.device}",
-        "ro.product.name=${build.name}",
-        "ro.product.board=${build.board}",
-        "ro.hardware=${build.hardware}",
-        "ro.build.id=${build.buildId}",
-        "ro.build.display.id=${build.displayId}",
-        "ro.build.version.release=${build.versionRelease}",
-        "ro.build.version.sdk=${build.versionSdk}",
-        "ro.build.version.security_patch=${build.securityPatch}"
-    ).joinToString("\n")
-
     private fun parseBuildProp(raw: String, fallback: BuildPropProfile): BuildPropProfile {
-        if (raw.isBlank()) return fallback
-        val map = raw.lineSequence()
+        val trimmed = raw.trim()
+        if (trimmed.isBlank()) return fallback
+        if (!trimmed.contains("=") && trimmed.contains(":") && trimmed.contains("/")) {
+            return fallback.copy(fingerprint = trimmed)
+        }
+        val map = trimmed.lineSequence()
             .map { it.trim() }
             .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
             .associate {
@@ -526,10 +500,5 @@ class StatusScreen(
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
 
-    private data class FieldRow(
-        val label: String,
-        val value: TextView,
-        val enabled: Boolean,
-        val enableView: TextView
-    )
+    private data class FieldRow(val value: TextView, val enabled: Boolean)
 }
