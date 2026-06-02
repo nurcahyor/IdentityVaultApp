@@ -60,6 +60,14 @@ class StatusViewModel(context: Context) {
 
     fun generateProfileObject() = generator.generate(identityRepository.getProfile().name)
 
+    fun resetProfile() {
+        val profile = generator.generate("Default Profile")
+        identityRepository.saveProfile(profile)
+        profileApplied = false
+        prefs.edit().putBoolean("applied", false).apply()
+        logRepository.add("Profile reset")
+    }
+
     fun markProfileDirty() {
         profileApplied = false
         prefs.edit().putBoolean("applied", false).apply()

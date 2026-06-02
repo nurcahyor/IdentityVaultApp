@@ -31,21 +31,18 @@ class MainActivity : Activity(), StatusScreen.Callbacks {
 
     override fun onShowMenu(anchor: View) {
         PopupMenu(this, anchor).apply {
+            menu.add("Backup Profile")
+            menu.add("Restore Profile")
+            menu.add("Reset Profile")
             menu.add("Log")
-            menu.add("Refresh status")
-            menu.add("Export profile")
-            menu.add("Import profile")
-            menu.add("Reset profile")
+            menu.add("About")
             setOnMenuItemClickListener { item ->
                 when (item.title.toString()) {
+                    "Backup Profile" -> onExportBackup()
+                    "Restore Profile" -> onImportBackup()
+                    "Reset Profile" -> screen.resetProfile()
                     "Log" -> screen.showLogs()
-                    "Refresh status" -> {
-                        viewModel.refresh()
-                        screen.render()
-                    }
-                    "Export profile" -> onExportBackup()
-                    "Import profile" -> onImportBackup()
-                    "Reset profile" -> screen.resetProfile()
+                    "About" -> screen.showAbout()
                 }
                 true
             }

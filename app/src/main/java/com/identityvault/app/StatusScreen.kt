@@ -13,7 +13,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import com.identityvault.app.data.BuildPropProfile
@@ -34,26 +33,26 @@ class StatusScreen(
         fun onShowMenu(anchor: View)
     }
 
-    private val bg = Color.rgb(11, 15, 25)
-    private val panelBg = Color.rgb(17, 24, 39)
-    private val panelStroke = Color.rgb(45, 55, 72)
+    private val bg = Color.rgb(12, 16, 24)
+    private val panelBg = Color.rgb(18, 24, 34)
+    private val rowStroke = Color.rgb(39, 48, 62)
     private val textColor = Color.rgb(226, 232, 240)
-    private val muted = Color.rgb(148, 163, 184)
-    private val accent = Color.rgb(45, 212, 191)
-    private val darkAccent = Color.rgb(15, 118, 110)
+    private val muted = Color.rgb(145, 158, 176)
+    private val quiet = Color.rgb(96, 110, 128)
+    private val accent = Color.rgb(45, 190, 176)
+    private val disabled = Color.rgb(86, 98, 116)
 
     private lateinit var root: LinearLayout
-    private val switches = linkedMapOf<String, Switch>()
-    private val values = linkedMapOf<String, TextView>()
-    private val buildInputs = linkedMapOf<String, EditText>()
-    private lateinit var buildSwitch: Switch
+    private val fieldRows = linkedMapOf<String, FieldRow>()
+    private lateinit var profileName: EditText
     private var buildProfile: BuildPropProfile = BuildPropProfile.default()
+    private var buildEnabled: Boolean = true
 
     fun create(): View {
         val scroll = ScrollView(context).apply { setBackgroundColor(bg) }
         root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(28, 24, 28, 32)
+            setPadding(22, 20, 22, 24)
             setBackgroundColor(bg)
         }
         scroll.addView(root)
@@ -63,10 +62,8 @@ class StatusScreen(
 
     fun render() {
         root.removeAllViews()
-        switches.clear()
-        values.clear()
+        fieldRows.clear()
         topBar()
-        statusStrip()
         profilePanel(viewModel.identityRepository.getProfile())
     }
 
@@ -78,232 +75,236 @@ class StatusScreen(
         val titleBox = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         titleBox.addView(TextView(context).apply {
             text = "IdentityVault"
-            textSize = 25f
+            textSize = 21f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(textColor)
         })
         titleBox.addView(TextView(context).apply {
             text = "Identity profile testing module"
-            textSize = 13f
+            textSize = 12f
             setTextColor(muted)
         })
         row.addView(titleBox, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(smallButton("Detector").apply { setOnClickListener { DetectorBottomSheet(context).show() } })
-        row.addView(smallButton("...").apply { setOnClickListener { callbacks.onShowMenu(this) } })
+        row.addView(outlineButton("Detector").apply { setOnClickListener { DetectorBottomSheet(context).show() } })
+        row.addView(outlineButton("...").apply { setOnClickListener { callbacks.onShowMenu(this) } })
         root.addView(row)
-    }
-
-    private fun statusStrip() {
-        viewModel.refresh()
-        val rootStatus = if (viewModel.rootStatus.granted) "Root: Granted" else "Root: ${if (viewModel.rootStatus.available) "Available" else "Clean"}"
-        val lsposed = if (viewModel.lsposedStatus.hookActive) "LSPosed: Active" else if (viewModel.lsposedStatus.installed) "LSPosed: Ready" else "LSPosed: Missing"
-        val applied = if (viewModel.profileApplied) "Profile: Applied" else "Profile: Not applied"
-        root.addView(TextView(context).apply {
-            text = "$rootStatus   /   $lsposed   /   $applied"
-            textSize = 12f
-            setTextColor(muted)
-            setPadding(0, 16, 0, 0)
-        })
     }
 
     private fun profilePanel(profile: IdentityProfile) {
         buildProfile = profile.buildProp
-        val panel = panel()
-        addName(panel, profile.name)
+        buildEnabled = profile.buildPropEnabled
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(16, 14, 16, 16)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(panelBg)
+                cornerRadius = 8f
+            }
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                setMargins(0, 16, 0, 0)
+            }
+        }
+        profileName = EditText(context).apply {
+            hint = "Profile name"
+            setText(profile.name)
+            setSingleLine(true)
+            textSize = 14f
+            setTextColor(textColor)
+            setHintTextColor(quiet)
+            backgroundTintList = android.content.res.ColorStateList.valueOf(rowStroke)
+        }
+        panel.addView(profileName)
+
         addField(panel, "IMEI", profile.imei)
+        addField(panel, "Android ID", profile.androidId)
+        addField(panel, "GSF ID", profile.gsfId)
+        addField(panel, "MediaDrm ID", profile.mediaDrmId)
         addField(panel, "Serial", profile.serial)
         addField(panel, "Hardware ID", profile.hardwareId)
         addField(panel, "MAC Address", profile.macAddress)
         addField(panel, "MAC BSSID", profile.macBssid)
         addField(panel, "MAC SSID", profile.macSsid)
         addField(panel, "Bluetooth MAC", profile.bluetoothMac)
-        addField(panel, "Android ID", profile.androidId)
         addField(panel, "SIM Serial ID", profile.simSerialId)
         addField(panel, "SIM Sub IDs", profile.simSubIds)
         addField(panel, "Mobile No", profile.mobileNo)
-        addField(panel, "MediaDrm ID", profile.mediaDrmId)
         addField(panel, "SIM Operator", profile.simOperator)
-        addField(panel, "GSF ID", profile.gsfId)
-        addBuildSummary(panel, profile)
+        addBuildPropRow(panel)
         addBottomButtons(panel)
         root.addView(panel)
     }
 
-    private fun addName(parent: LinearLayout, name: String) {
-        val input = EditText(context).apply {
-            hint = "Profile name"
-            setText(name)
-            setSingleLine(true)
-            textSize = 15f
-            setTextColor(textColor)
-            setHintTextColor(Color.rgb(100, 116, 139))
-            backgroundTintList = android.content.res.ColorStateList.valueOf(Color.rgb(71, 85, 105))
-        }
-        parent.addView(input)
-        buildInputs["profileName"] = input
-    }
-
     private fun addField(parent: LinearLayout, label: String, field: IdentityFieldState) {
-        val box = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 14, 0, 0)
-        }
-        val row = LinearLayout(context).apply {
+        val box = fieldBox()
+        val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        row.addView(TextView(context).apply {
+        header.addView(TextView(context).apply {
             text = label
-            textSize = 15f
+            textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(textColor)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        val sw = Switch(context).apply {
-            isChecked = field.enabled
-            showText = false
+        val random = iconButton("R", true).apply { setOnClickListener { randomizeField(label) } }
+        val enable = iconButton("P", field.enabled)
+        var enabled = field.enabled
+        enable.setOnClickListener {
+            enabled = !enabled
+            styleIcon(enable, enabled)
+            fieldRows[label] = fieldRows[label]!!.copy(enabled = enabled)
         }
-        row.addView(sw)
-        val value = TextView(context).apply {
-            text = field.value
-            textSize = 14f
-            setTextColor(muted)
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, 4, 0, 0)
-        }
-        box.addView(row)
+        header.addView(random)
+        header.addView(enable)
+        val value = valueText(field.value)
+        box.addView(header)
         box.addView(value)
         parent.addView(box)
-        switches[label] = sw
-        values[label] = value
+        fieldRows[label] = FieldRow(label, value, enabled, enable)
     }
 
-    private fun addBuildSummary(parent: LinearLayout, profile: IdentityProfile) {
-        val box = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, 18, 0, 0)
-        }
-        val row = LinearLayout(context).apply {
+    private fun addBuildPropRow(parent: LinearLayout) {
+        val box = fieldBox()
+        val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        row.addView(TextView(context).apply {
+        header.addView(TextView(context).apply {
             text = "Build Prop"
-            textSize = 15f
+            textSize = 14f
             typeface = Typeface.DEFAULT_BOLD
             setTextColor(textColor)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        buildSwitch = Switch(context).apply {
-            isChecked = profile.buildPropEnabled
-            showText = false
+        header.addView(iconButton("D", true).apply { setOnClickListener { showBuildPropDialog(openPreset = true) } })
+        header.addView(iconButton("T", true).apply { setOnClickListener { showBuildPropDialog(openPreset = false) } })
+        val enable = iconButton("P", buildEnabled).apply {
+            setOnClickListener {
+                buildEnabled = !buildEnabled
+                styleIcon(this, buildEnabled)
+            }
         }
-        row.addView(buildSwitch)
-        val summary = TextView(context).apply {
-            text = "${profile.buildProp.brand} ${profile.buildProp.model} / Android ${profile.buildProp.versionRelease}"
-            textSize = 14f
-            setTextColor(muted)
-            setPadding(0, 4, 0, 0)
-        }
-        val fp = TextView(context).apply {
-            text = "Fingerprint: ${profile.buildProp.fingerprint}"
-            textSize = 13f
-            setTextColor(Color.rgb(100, 116, 139))
-            setSingleLine(true)
-            ellipsize = TextUtils.TruncateAt.END
-            setPadding(0, 2, 0, 8)
-        }
-        box.addView(row)
+        header.addView(enable)
+        val summary = valueText("${buildProfile.brand} ${buildProfile.model} / Android ${buildProfile.versionRelease}")
+        box.setOnClickListener { showBuildPropDialog(openPreset = true) }
+        box.addView(header)
         box.addView(summary)
-        box.addView(fp)
-        box.addView(secondaryButton("Edit Build Prop").apply { setOnClickListener { showBuildEditor() } })
         parent.addView(box)
     }
 
     private fun addBottomButtons(parent: LinearLayout) {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, 22, 0, 0)
+            setPadding(0, 14, 0, 0)
         }
-        row.addView(primaryButton("GENERATE").apply { setOnClickListener { generateActiveFields() } }, LinearLayout.LayoutParams(0, 48, 1f))
-        row.addView(primaryButton("SAVE").apply { setOnClickListener { saveProfile(false) } }, LinearLayout.LayoutParams(0, 48, 1f))
-        row.addView(primaryButton("APPLY").apply { setOnClickListener { applyProfile() } }, LinearLayout.LayoutParams(0, 48, 1f))
+        row.addView(primaryButton("Generate All").apply { setOnClickListener { generateAllActive() } }, LinearLayout.LayoutParams(0, 42, 1f))
+        row.addView(primaryButton("Save").apply { setOnClickListener { saveProfile() } }, LinearLayout.LayoutParams(0, 42, 1f))
+        row.addView(primaryButton("Apply").apply { setOnClickListener { applyProfile() } }, LinearLayout.LayoutParams(0, 42, 1f))
         parent.addView(row)
     }
 
-    private fun generateActiveFields() {
+    private fun randomizeField(label: String) {
+        val generated = viewModel.generateProfileObject()
+        val state = when (label) {
+            "IMEI" -> generated.imei
+            "Android ID" -> generated.androidId
+            "GSF ID" -> generated.gsfId
+            "MediaDrm ID" -> generated.mediaDrmId
+            "Serial" -> generated.serial
+            "Hardware ID" -> generated.hardwareId
+            "MAC Address" -> generated.macAddress
+            "MAC BSSID" -> generated.macBssid
+            "MAC SSID" -> generated.macSsid
+            "Bluetooth MAC" -> generated.bluetoothMac
+            "SIM Serial ID" -> generated.simSerialId
+            "SIM Sub IDs" -> generated.simSubIds
+            "Mobile No" -> generated.mobileNo
+            "SIM Operator" -> generated.simOperator
+            else -> null
+        } ?: return
+        fieldRows[label]?.value?.text = state.value
+    }
+
+    private fun generateAllActive() {
         val generated = viewModel.generateProfileObject()
         fun set(label: String, state: IdentityFieldState) {
-            if (switches[label]?.isChecked == true) values[label]?.text = state.value
+            val row = fieldRows[label] ?: return
+            if (row.enabled) row.value.text = state.value
         }
         set("IMEI", generated.imei)
+        set("Android ID", generated.androidId)
+        set("GSF ID", generated.gsfId)
+        set("MediaDrm ID", generated.mediaDrmId)
         set("Serial", generated.serial)
         set("Hardware ID", generated.hardwareId)
         set("MAC Address", generated.macAddress)
         set("MAC BSSID", generated.macBssid)
         set("MAC SSID", generated.macSsid)
         set("Bluetooth MAC", generated.bluetoothMac)
-        set("Android ID", generated.androidId)
         set("SIM Serial ID", generated.simSerialId)
         set("SIM Sub IDs", generated.simSubIds)
         set("Mobile No", generated.mobileNo)
-        set("MediaDrm ID", generated.mediaDrmId)
         set("SIM Operator", generated.simOperator)
-        set("GSF ID", generated.gsfId)
-        if (buildSwitch.isChecked) buildProfile = generated.buildProp
-        toast("Field aktif digenerate")
-        renderGeneratedWithoutLosingValues()
-    }
-
-    private fun renderGeneratedWithoutLosingValues() {
-        val profile = currentProfile(false)
-        viewModel.identityRepository.saveProfile(profile)
+        if (buildEnabled) buildProfile = generated.buildProp
+        saveProfile(showToast = false)
+        toast("Active fields generated")
         render()
     }
 
-    private fun showBuildEditor() {
-        buildInputs.clear()
+    private fun showBuildPropDialog(openPreset: Boolean) {
+        var selected = buildProfile
         val container = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(32, 10, 32, 0)
+            setPadding(26, 8, 26, 0)
         }
-        addBuild(container, "ro.build.fingerprint", buildProfile.fingerprint)
-        addBuild(container, "ro.product.brand", buildProfile.brand)
-        addBuild(container, "ro.product.model", buildProfile.model)
-        addBuild(container, "ro.product.manufacturer", buildProfile.manufacturer)
-        addBuild(container, "ro.product.device", buildProfile.device)
-        addBuild(container, "ro.product.name", buildProfile.name)
-        addBuild(container, "ro.product.board", buildProfile.board)
-        addBuild(container, "ro.hardware", buildProfile.hardware)
-        addBuild(container, "ro.build.id", buildProfile.buildId)
-        addBuild(container, "ro.build.display.id", buildProfile.displayId)
-        addBuild(container, "ro.build.version.release", buildProfile.versionRelease)
-        addBuild(container, "ro.build.version.sdk", buildProfile.versionSdk)
-        addBuild(container, "ro.build.version.security_patch", buildProfile.securityPatch)
+        val presetTitle = TextView(context).apply {
+            text = "Preset"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(30, 41, 59))
+        }
+        container.addView(presetTitle)
+        presets().forEach { preset ->
+            container.addView(Button(context).apply {
+                text = "${preset.brand} ${preset.model} Android ${preset.versionRelease}"
+                setAllCaps(false)
+                setOnClickListener {
+                    selected = preset
+                    toast("Preset selected")
+                }
+            })
+        }
+        val pasteTitle = TextView(context).apply {
+            text = "Paste Manual"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.rgb(30, 41, 59))
+            setPadding(0, 12, 0, 0)
+        }
+        val paste = EditText(context).apply {
+            minLines = 7
+            maxLines = 10
+            gravity = Gravity.TOP
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            hint = "ro.build.fingerprint=...\nro.product.brand=...\nro.product.model=..."
+            setText(if (openPreset) "" else buildToText(buildProfile))
+        }
+        container.addView(pasteTitle)
+        container.addView(paste)
         AlertDialog.Builder(context)
-            .setTitle("Edit Build Prop")
+            .setTitle("Build Prop")
             .setView(ScrollView(context).apply { addView(container) })
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Save") { _, _ ->
-                buildProfile = buildFromInputs()
-                saveProfile(false)
+                val parsed = parseBuildProp(paste.text.toString(), selected)
+                buildProfile = parsed
+                saveProfile(showToast = false)
                 render()
             }
             .show()
     }
 
-    private fun addBuild(parent: LinearLayout, key: String, value: String) {
-        val input = EditText(context).apply {
-            hint = key
-            setText(value)
-            setSingleLine(true)
-            inputType = InputType.TYPE_CLASS_TEXT
-        }
-        parent.addView(input)
-        buildInputs[key] = input
-    }
-
-    private fun saveProfile(draft: Boolean) {
-        val profile = currentProfile(draft)
+    private fun saveProfile(showToast: Boolean = true): Boolean {
+        val profile = currentProfile()
         val errors = IdentityValidator().validate(profile)
         if (errors.isNotEmpty()) {
             AlertDialog.Builder(context)
@@ -311,28 +312,28 @@ class StatusScreen(
                 .setMessage(errors.entries.joinToString("\n") { "${it.key}: ${it.value}" })
                 .setPositiveButton("OK", null)
                 .show()
-            return
+            return false
         }
         viewModel.identityRepository.saveProfile(profile)
         viewModel.markProfileDirty()
-        toast("Profile disimpan")
-        render()
+        if (showToast) toast("Profile saved")
+        return true
     }
 
     private fun applyProfile() {
-        saveProfile(false)
+        if (!saveProfile(showToast = false)) return
         viewModel.applyProfile()
-        toast("Profile diterapkan. Force stop dan buka ulang aplikasi target jika perlu.")
+        toast("Profile applied. Force stop dan buka ulang app target jika perlu.")
         render()
     }
 
-    private fun currentProfile(draft: Boolean): IdentityProfile {
-        fun field(label: String): IdentityFieldState = IdentityFieldState(
-            value = values[label]?.text?.toString()?.trim().orEmpty(),
-            enabled = switches[label]?.isChecked == true
-        )
+    private fun currentProfile(): IdentityProfile {
+        fun field(label: String): IdentityFieldState {
+            val row = fieldRows[label]
+            return IdentityFieldState(row?.value?.text?.toString()?.trim().orEmpty(), row?.enabled == true)
+        }
         return IdentityProfile(
-            name = (buildInputs["profileName"]?.text?.toString()?.trim().orEmpty()).ifBlank { viewModel.identityRepository.getProfile().name },
+            name = profileName.text.toString().trim().ifBlank { "Default Profile" },
             imei = field("IMEI"),
             serial = field("Serial"),
             hardwareId = field("Hardware ID"),
@@ -348,28 +349,10 @@ class StatusScreen(
             simOperator = field("SIM Operator"),
             gsfId = field("GSF ID"),
             buildProp = buildProfile,
-            buildPropEnabled = buildSwitch.isChecked,
-            draft = draft
+            buildPropEnabled = buildEnabled,
+            draft = false
         )
     }
-
-    private fun buildFromInputs(): BuildPropProfile = BuildPropProfile(
-        fingerprint = buildText("ro.build.fingerprint"),
-        brand = buildText("ro.product.brand"),
-        model = buildText("ro.product.model"),
-        manufacturer = buildText("ro.product.manufacturer"),
-        device = buildText("ro.product.device"),
-        name = buildText("ro.product.name"),
-        board = buildText("ro.product.board"),
-        hardware = buildText("ro.hardware"),
-        buildId = buildText("ro.build.id"),
-        displayId = buildText("ro.build.display.id"),
-        versionRelease = buildText("ro.build.version.release"),
-        versionSdk = buildText("ro.build.version.sdk"),
-        securityPatch = buildText("ro.build.version.security_patch")
-    )
-
-    private fun buildText(key: String): String = buildInputs[key]?.text?.toString()?.trim().orEmpty()
 
     fun showLogs() {
         val logs = viewModel.logRepository.getLogs()
@@ -381,45 +364,172 @@ class StatusScreen(
             .show()
     }
 
+    fun showAbout() {
+        AlertDialog.Builder(context)
+            .setTitle("IdentityVault")
+            .setMessage("Identity profile testing module.\n\nUse for controlled testing only.")
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
     fun resetProfile() {
-        viewModel.generateProfile()
-        toast("Profile direset")
+        viewModel.resetProfile()
+        toast("Profile reset")
         render()
     }
 
-    private fun panel(): LinearLayout = LinearLayout(context).apply {
+    private fun fieldBox(): LinearLayout = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        setPadding(22, 18, 22, 18)
+        setPadding(0, 10, 0, 10)
         background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(panelBg)
-            cornerRadius = 12f
-            setStroke(1, panelStroke)
+            setColor(Color.TRANSPARENT)
+            setStroke(1, rowStroke)
+            cornerRadius = 6f
         }
         layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            setMargins(0, 18, 0, 0)
+            setMargins(0, 8, 0, 0)
         }
+        setPadding(12, 9, 12, 9)
     }
 
-    private fun smallButton(label: String): Button = button(label, transparent = true)
-    private fun secondaryButton(label: String): Button = button(label, transparent = true)
-    private fun primaryButton(label: String): Button = button(label, transparent = false)
+    private fun valueText(value: String): TextView = TextView(context).apply {
+        text = value
+        textSize = 13f
+        setTextColor(muted)
+        setSingleLine(true)
+        ellipsize = TextUtils.TruncateAt.END
+        setPadding(0, 4, 0, 0)
+    }
 
-    private fun button(label: String, transparent: Boolean): Button = Button(context).apply {
+    private fun iconButton(label: String, active: Boolean): TextView = TextView(context).apply {
         text = label
         textSize = 12f
         typeface = Typeface.DEFAULT_BOLD
+        gravity = Gravity.CENTER
+        styleIcon(this, active)
+        layoutParams = LinearLayout.LayoutParams(34, 30).apply { setMargins(6, 0, 0, 0) }
+    }
+
+    private fun styleIcon(view: TextView, active: Boolean) {
+        view.setTextColor(if (active) accent else disabled)
+        view.background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(Color.rgb(15, 20, 30))
+            setStroke(1, if (active) Color.rgb(35, 118, 110) else Color.rgb(48, 58, 72))
+            cornerRadius = 6f
+        }
+    }
+
+    private fun outlineButton(label: String): Button = Button(context).apply {
+        text = label
+        textSize = 12f
+        setAllCaps(false)
         minHeight = 0
         minWidth = 0
-        setPadding(14, 6, 14, 6)
-        setTextColor(if (transparent) accent else Color.rgb(5, 15, 20))
+        setPadding(12, 5, 12, 5)
+        setTextColor(accent)
         background = android.graphics.drawable.GradientDrawable().apply {
-            cornerRadius = 18f
-            setColor(if (transparent) Color.TRANSPARENT else accent)
-            setStroke(1, if (transparent) darkAccent else accent)
+            setColor(Color.TRANSPARENT)
+            setStroke(1, Color.rgb(35, 92, 91))
+            cornerRadius = 6f
         }
+    }
+
+    private fun primaryButton(label: String): Button = Button(context).apply {
+        text = label
+        textSize = 12f
+        typeface = Typeface.DEFAULT_BOLD
+        setAllCaps(false)
+        setTextColor(Color.rgb(5, 18, 22))
+        background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(accent)
+            cornerRadius = 7f
+        }
+    }
+
+    private fun presets(): List<BuildPropProfile> = listOf(
+        BuildPropProfile(
+            fingerprint = "samsung/a52sxq/a52sxq:12/SP1A.210812.016/A528BXXS1DVL2:user/release-keys",
+            brand = "samsung",
+            model = "SM-A528B",
+            manufacturer = "samsung",
+            device = "a52sxq",
+            name = "a52sxq",
+            board = "lahaina",
+            hardware = "qcom",
+            buildId = "SP1A.210812.016",
+            displayId = "SP1A.210812.016.A528BXXS1DVL2",
+            versionRelease = "12",
+            versionSdk = "31",
+            securityPatch = "2022-12-01"
+        ),
+        BuildPropProfile.default(),
+        BuildPropProfile(
+            fingerprint = "Xiaomi/vayu/vayu:11/RKQ1.200826.002/V12.5.7.0.RJUMIXM:user/release-keys",
+            brand = "Xiaomi",
+            model = "M2102J20SG",
+            manufacturer = "Xiaomi",
+            device = "vayu",
+            name = "vayu",
+            board = "vayu",
+            hardware = "qcom",
+            buildId = "RKQ1.200826.002",
+            displayId = "RKQ1.200826.002",
+            versionRelease = "11",
+            versionSdk = "30",
+            securityPatch = "2021-12-01"
+        )
+    )
+
+    private fun buildToText(build: BuildPropProfile): String = listOf(
+        "ro.build.fingerprint=${build.fingerprint}",
+        "ro.product.brand=${build.brand}",
+        "ro.product.model=${build.model}",
+        "ro.product.manufacturer=${build.manufacturer}",
+        "ro.product.device=${build.device}",
+        "ro.product.name=${build.name}",
+        "ro.product.board=${build.board}",
+        "ro.hardware=${build.hardware}",
+        "ro.build.id=${build.buildId}",
+        "ro.build.display.id=${build.displayId}",
+        "ro.build.version.release=${build.versionRelease}",
+        "ro.build.version.sdk=${build.versionSdk}",
+        "ro.build.version.security_patch=${build.securityPatch}"
+    ).joinToString("\n")
+
+    private fun parseBuildProp(raw: String, fallback: BuildPropProfile): BuildPropProfile {
+        if (raw.isBlank()) return fallback
+        val map = raw.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
+            .associate {
+                val index = it.indexOf("=")
+                it.substring(0, index).trim() to it.substring(index + 1).trim()
+            }
+        return BuildPropProfile(
+            fingerprint = map["ro.build.fingerprint"] ?: fallback.fingerprint,
+            brand = map["ro.product.brand"] ?: fallback.brand,
+            model = map["ro.product.model"] ?: fallback.model,
+            manufacturer = map["ro.product.manufacturer"] ?: fallback.manufacturer,
+            device = map["ro.product.device"] ?: fallback.device,
+            name = map["ro.product.name"] ?: fallback.name,
+            board = map["ro.product.board"] ?: fallback.board,
+            hardware = map["ro.hardware"] ?: fallback.hardware,
+            buildId = map["ro.build.id"] ?: fallback.buildId,
+            displayId = map["ro.build.display.id"] ?: fallback.displayId,
+            versionRelease = map["ro.build.version.release"] ?: fallback.versionRelease,
+            versionSdk = map["ro.build.version.sdk"] ?: fallback.versionSdk,
+            securityPatch = map["ro.build.version.security_patch"] ?: fallback.securityPatch
+        )
     }
 
     private fun toast(message: String) {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
+
+    private data class FieldRow(
+        val label: String,
+        val value: TextView,
+        val enabled: Boolean,
+        val enableView: TextView
+    )
 }
