@@ -21,6 +21,45 @@ object SystemPropertiesHooks {
     private fun properties(profile: HookProfile): Map<String, String> {
         if (!profile.buildPropEnabled) return emptyMap()
         val map = profile.build.toMutableMap()
+        fun copyKeys(source: String, targets: List<String>) {
+            val value = map[source]?.takeIf { it.isNotBlank() } ?: return
+            targets.forEach { map[it] = value }
+        }
+        copyKeys(
+            "ro.product.model",
+            listOf(
+                "ro.product.marketname",
+                "ro.product.vendor.marketname",
+                "ro.product.odm.marketname",
+                "ro.product.system.marketname",
+                "ro.product.vendor.model",
+                "ro.product.odm.model",
+                "ro.product.system.model",
+                "ro.product.product.model"
+            )
+        )
+        copyKeys(
+            "ro.product.brand",
+            listOf("ro.product.vendor.brand", "ro.product.odm.brand", "ro.product.system.brand")
+        )
+        copyKeys(
+            "ro.product.manufacturer",
+            listOf("ro.product.vendor.manufacturer", "ro.product.odm.manufacturer")
+        )
+        copyKeys(
+            "ro.product.device",
+            listOf("ro.product.vendor.device", "ro.product.odm.device")
+        )
+        copyKeys(
+            "ro.product.name",
+            listOf("ro.product.vendor.name", "ro.product.odm.name")
+        )
+        val deviceName = profile.deviceName.value.trim().ifBlank { map["ro.product.model"].orEmpty() }
+        if (deviceName.isNotBlank()) {
+            map["persist.sys.device_name"] = deviceName
+            map["bluetooth.device.default_name"] = deviceName
+            map["net.hostname"] = deviceName
+        }
         if (profile.serial.enabled && profile.serial.value.isNotBlank()) {
             map["ro.serialno"] = profile.serial.value
             map["ril.serialnumber"] = profile.serial.value

@@ -1,6 +1,7 @@
 package com.identityvault.app.log
 
 import android.content.Context
+import android.os.Build
 import org.json.JSONArray
 import org.json.JSONObject
 import java.text.SimpleDateFormat
@@ -27,9 +28,10 @@ data class DetailedLogEntry(
 
     fun toDisplay(): String {
         val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(timestamp))
-        val packageLine = if (packageName.isBlank()) "local · SDK -" else "$packageName · SDK $sdkInt"
+        val displaySdk = if (sdkInt > 0) sdkInt else Build.VERSION.SDK_INT
+        val packageLine = if (packageName.isBlank()) "local - SDK $displaySdk" else "$packageName - SDK $displaySdk"
         val detailLine = if (detail.isBlank()) "" else "\n$detail"
-        return "[$level] $category · $time\n$packageLine\n$message$detailLine"
+        return "[$level] $category - $time\n$packageLine\n$message$detailLine"
     }
 
     companion object {
@@ -57,7 +59,15 @@ class DetailedLogRepository(context: Context) {
         detail: String = ""
     ) {
         val updated = getEntries().toMutableList()
-        updated += DetailedLogEntry(System.currentTimeMillis(), level, packageName, sdkInt, category, message, detail)
+        updated += DetailedLogEntry(
+            timestamp = System.currentTimeMillis(),
+            level = level,
+            packageName = packageName,
+            sdkInt = if (sdkInt > 0) sdkInt else Build.VERSION.SDK_INT,
+            category = category,
+            message = message,
+            detail = detail
+        )
         while (updated.size > MAX_LOGS) updated.removeAt(0)
         prefs.edit().putString(KEY_ENTRIES, JSONArray(updated.map { it.toJson() }).toString()).apply()
     }

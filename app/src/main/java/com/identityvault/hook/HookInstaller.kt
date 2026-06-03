@@ -23,12 +23,20 @@ object HookInstaller {
         logger.log("SUCCESS", "PROFILE", "Active profile loaded")
 
         installGroup(session, "ANDROID_ID") { AndroidIdHooks.install(session, lpparam, profile) }
+        installGroup(session, "SETTINGS_NAME") { SettingsNameHooks.install(session, profile) }
         installGroup(session, "TELEPHONY") { TelephonyHooks.install(session, profile) }
         installGroup(session, "WIFI") { WifiHooks.install(session, profile) }
         installGroup(session, "BLUETOOTH") { BluetoothHooks.install(session, profile) }
         installGroup(session, "DRM") { DrmHooks.install(session, profile) }
+        installGroup(session, "GSF") { GsfHooks.install(session, profile) }
+        installGroup(session, "ADVERTISING_ID") { AdvertisingIdHooks.install(session, lpparam, profile) }
+        installGroup(session, "ACCOUNT") { AccountHooks.install(session, profile) }
         installGroup(session, "BUILD") { BuildPropHooks.install(session, lpparam, profile) }
         installGroup(session, "SYSTEM_PROPERTIES") { SystemPropertiesHooks.install(session, lpparam, profile) }
+        if (packageName == "com.android.settings") {
+            installGroup(session, "SETTINGS_ABOUT") { SettingsAboutHooks.install(context, lpparam, profile, session) }
+        }
+        logCompatibilitySummary(session)
         logger.marker(session)
     }
 
@@ -57,5 +65,34 @@ object HookInstaller {
         }.onFailure {
             session.error("PROVIDER", "Failed to load active profile: ${it.message.orEmpty()}")
         }.getOrNull()
+    }
+
+    private fun logCompatibilitySummary(session: HookSession) {
+        fun status(field: String): String = when {
+            session.appliedFields.any { it.equals(field, ignoreCase = true) || it.contains(field, ignoreCase = true) } -> "applied"
+            session.skippedFields.any { it.equals(field, ignoreCase = true) || it.contains(field, ignoreCase = true) } -> "skipped"
+            field == "IMEI 2" -> "not available until target calls slot 1"
+            else -> "pending"
+        }
+        fun hookStatus(category: String): String = if (session.hooksInstalled.contains(category)) "hooked" else "skipped"
+        session.logger.log(
+            "INFO",
+            "SUMMARY",
+            listOf(
+                "Android ID: ${status("AndroidID")}",
+                "Telephony IMEI1: ${status("IMEI 1")}",
+                "Telephony IMEI2: ${status("IMEI 2")}",
+                "MEID: ${status("MEID")}",
+                "Subscriber ID: ${status("Subscriber ID")}",
+                "WiFi: ${hookStatus("WIFI")}",
+                "Bluetooth: ${hookStatus("BLUETOOTH")}",
+                "Build: ${hookStatus("BUILD")}",
+                "SystemProperties: ${hookStatus("SYSTEM_PROPERTIES")}",
+                "MediaDrm: ${hookStatus("DRM")}",
+                GsfHooks.summary(session),
+                "Advertising ID: ${hookStatus("ADVERTISING_ID")}",
+                "Google Account: ${hookStatus("ACCOUNT")}"
+            ).joinToString(" | ")
+        )
     }
 }

@@ -1,6 +1,7 @@
 package com.identityvault.app
 
 import android.app.AlertDialog
+import android.app.Dialog
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -14,6 +15,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.util.Log
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
@@ -21,9 +23,13 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import android.widget.ListView
+import android.widget.PopupWindow
 import com.identityvault.app.data.BuildPropProfile
 import com.identityvault.app.data.IdentityFieldState
 import com.identityvault.app.data.IdentityProfile
+import com.identityvault.app.identity.BuildPropPreset
+import com.identityvault.app.identity.BuildPropPresetRepository
 import com.identityvault.app.status.StatusViewModel
 
 class StatusScreen(
@@ -48,25 +54,51 @@ class StatusScreen(
     private val iconIdle = Color.rgb(118, 130, 146)
     private val errorColor = Color.rgb(205, 100, 94)
     private val dialogBg = Color.rgb(18, 23, 31)
+    private val prefs = context.getSharedPreferences("identityvault_ui", Context.MODE_PRIVATE)
 
     private lateinit var content: LinearLayout
     private val fieldRows = linkedMapOf<String, FieldRow>()
     private var buildProfile: BuildPropProfile = BuildPropProfile.default()
     private lateinit var buildRow: FieldRow
+    private var buildPropChooserOpen = false
+    private var lastBuildPropActionAt = 0L
     private val smartEditFields = setOf(
         "IMEI",
+        "IMEI 1",
+        "IMEI 2",
+        "MEID",
         "Android ID",
         "Google Services Framework ID",
+        "Advertising ID",
+        "Google Account Email",
+        "Device Name",
         "MediaDrm ID",
         "Serial",
         "Hardware ID",
         "MAC Address",
         "MAC BSSID",
         "Bluetooth MAC",
+        "Bluetooth Name",
         "SIM Serial ID",
+        "Subscriber ID / IMSI",
         "Mobile No",
-        "SIM Operator"
+        "SIM Operator",
+        "Network Operator",
+        "SIM Operator Name",
+        "Network Operator Name",
+        "SIM Country ISO",
+        "Network Country ISO",
+        "Phone Type",
+        "Network Type",
+        "Data Network Type",
+        "Voice Network Type",
+        "Limit Ad Tracking"
     )
+    private var advancedExpanded: Boolean
+        get() = prefs.getBoolean("advanced_sim_network_expanded", false)
+        set(value) {
+            prefs.edit().putBoolean("advanced_sim_network_expanded", value).apply()
+        }
 
     fun create(): View {
         val shell = LinearLayout(context).apply {
@@ -131,9 +163,14 @@ class StatusScreen(
             }
         }
         panel.addView(actionRow())
-        addField(panel, "IMEI", profile.imei)
+        addField(panel, "IMEI 1", profile.imei)
+        addField(panel, "IMEI 2", profile.imei2)
         addField(panel, "Android ID", profile.androidId)
         addField(panel, "Google Services Framework ID", profile.gsfId)
+        addField(panel, "Advertising ID", profile.advertisingId)
+        addField(panel, "Limit Ad Tracking", profile.limitAdTrackingEnabled)
+        addField(panel, "Google Account Email", profile.googleAccountEmail)
+        addField(panel, "Device Name", profile.deviceName)
         addField(panel, "MediaDrm ID", profile.mediaDrmId)
         addField(panel, "Serial", profile.serial)
         addField(panel, "Hardware ID", profile.hardwareId)
@@ -141,12 +178,60 @@ class StatusScreen(
         addField(panel, "MAC BSSID", profile.macBssid)
         addField(panel, "MAC SSID", profile.macSsid)
         addField(panel, "Bluetooth MAC", profile.bluetoothMac)
+        addField(panel, "Bluetooth Name", profile.bluetoothName)
         addField(panel, "SIM Serial ID", profile.simSerialId)
+        addField(panel, "Subscriber ID / IMSI", profile.subscriberId)
         addField(panel, "SIM Sub IDs", profile.simSubIds)
         addField(panel, "Mobile No", profile.mobileNo)
         addField(panel, "SIM Operator", profile.simOperator)
+        addAdvancedSection(panel, profile)
         addBuildProp(panel, profile.buildPropEnabled)
         content.addView(panel)
+    }
+
+    private fun addAdvancedSection(parent: LinearLayout, profile: IdentityProfile) {
+        val advancedBody = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = if (advancedExpanded) View.VISIBLE else View.GONE
+        }
+        val chevron = TextView(context).apply {
+            text = if (advancedExpanded) "▾" else "▸"
+            textSize = 17f
+            setTextColor(accent)
+            gravity = Gravity.CENTER
+        }
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 12, 0, 8)
+            isClickable = true
+            setOnClickListener {
+                val expanded = advancedBody.visibility != View.VISIBLE
+                advancedBody.visibility = if (expanded) View.VISIBLE else View.GONE
+                chevron.text = if (expanded) "▾" else "▸"
+                advancedExpanded = expanded
+            }
+        }
+        header.addView(TextView(context).apply {
+            text = "Advanced SIM / Network"
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(textColor)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(chevron, LinearLayout.LayoutParams(30, 30))
+        parent.addView(header)
+
+        addField(advancedBody, "MEID", profile.meid)
+        addField(advancedBody, "SIM Operator Name", profile.simOperatorName)
+        addField(advancedBody, "Network Operator", profile.networkOperator)
+        addField(advancedBody, "Network Operator Name", profile.networkOperatorName)
+        addField(advancedBody, "SIM Country ISO", profile.simCountryIso)
+        addField(advancedBody, "Network Country ISO", profile.networkCountryIso)
+        addField(advancedBody, "Phone Type", profile.phoneType)
+        addField(advancedBody, "Network Type", profile.networkType)
+        addField(advancedBody, "Data Network Type", profile.dataNetworkType)
+        addField(advancedBody, "Voice Network Type", profile.voiceNetworkType)
+        parent.addView(advancedBody)
     }
 
     private fun addField(parent: LinearLayout, label: String, field: IdentityFieldState) {
@@ -188,8 +273,14 @@ class StatusScreen(
         header.addView(labelView("Build Prop"), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(iconButton(R.drawable.ic_shuffle, true).apply {
             setOnClickListener {
-                buildProfile = presets().random()
-                buildRow.value.setText(buildProfile.fingerprint)
+                if (!allowBuildPropAction()) return@setOnClickListener
+                applyBuildPropPreset(BuildPropPresetRepository.presets.random())
+            }
+        })
+        header.addView(iconButton(R.drawable.ic_mask_edit, true).apply {
+            setOnClickListener {
+                if (!allowBuildPropAction() || buildPropChooserOpen) return@setOnClickListener
+                showBuildPropChooser()
             }
         })
         var enabled = enabledInitial
@@ -222,9 +313,15 @@ class StatusScreen(
     private fun randomizeField(label: String) {
         val generated = viewModel.generateProfileObject()
         val state = when (label) {
-            "IMEI" -> generated.imei
+            "IMEI", "IMEI 1" -> generated.imei
+            "IMEI 2" -> generated.imei2
+            "MEID" -> generated.meid
             "Android ID" -> generated.androidId
             "Google Services Framework ID" -> generated.gsfId
+            "Advertising ID" -> generated.advertisingId
+            "Limit Ad Tracking" -> generated.limitAdTrackingEnabled
+            "Google Account Email" -> generated.googleAccountEmail
+            "Device Name" -> generated.deviceName
             "MediaDrm ID" -> generated.mediaDrmId
             "Serial" -> generated.serial
             "Hardware ID" -> generated.hardwareId
@@ -232,10 +329,21 @@ class StatusScreen(
             "MAC BSSID" -> generated.macBssid
             "MAC SSID" -> generated.macSsid
             "Bluetooth MAC" -> generated.bluetoothMac
+            "Bluetooth Name" -> generated.bluetoothName
             "SIM Serial ID" -> generated.simSerialId
+            "Subscriber ID / IMSI" -> generated.subscriberId
             "SIM Sub IDs" -> generated.simSubIds
             "Mobile No" -> generated.mobileNo
             "SIM Operator" -> generated.simOperator
+            "Network Operator" -> generated.networkOperator
+            "SIM Operator Name" -> generated.simOperatorName
+            "Network Operator Name" -> generated.networkOperatorName
+            "SIM Country ISO" -> generated.simCountryIso
+            "Network Country ISO" -> generated.networkCountryIso
+            "Phone Type" -> generated.phoneType
+            "Network Type" -> generated.networkType
+            "Data Network Type" -> generated.dataNetworkType
+            "Voice Network Type" -> generated.voiceNetworkType
             else -> null
         } ?: return
         fieldRows[label]?.value?.setText(state.value)
@@ -247,9 +355,14 @@ class StatusScreen(
             val row = fieldRows[label] ?: return
             if (row.enabled) row.value.setText(state.value)
         }
-        set("IMEI", generated.imei)
+        set("IMEI 1", generated.imei)
+        set("IMEI 2", generated.imei2)
+        set("MEID", generated.meid)
         set("Android ID", generated.androidId)
         set("Google Services Framework ID", generated.gsfId)
+        set("Advertising ID", generated.advertisingId)
+        set("Limit Ad Tracking", generated.limitAdTrackingEnabled)
+        set("Google Account Email", generated.googleAccountEmail)
         set("MediaDrm ID", generated.mediaDrmId)
         set("Serial", generated.serial)
         set("Hardware ID", generated.hardwareId)
@@ -258,14 +371,211 @@ class StatusScreen(
         set("MAC SSID", generated.macSsid)
         set("Bluetooth MAC", generated.bluetoothMac)
         set("SIM Serial ID", generated.simSerialId)
+        set("Subscriber ID / IMSI", generated.subscriberId)
         set("SIM Sub IDs", generated.simSubIds)
         set("Mobile No", generated.mobileNo)
         set("SIM Operator", generated.simOperator)
+        set("Network Operator", generated.networkOperator)
+        set("SIM Operator Name", generated.simOperatorName)
+        set("Network Operator Name", generated.networkOperatorName)
+        set("SIM Country ISO", generated.simCountryIso)
+        set("Network Country ISO", generated.networkCountryIso)
+        set("Phone Type", generated.phoneType)
+        set("Network Type", generated.networkType)
+        set("Data Network Type", generated.dataNetworkType)
+        set("Voice Network Type", generated.voiceNetworkType)
         if (buildRow.enabled) {
-            buildProfile = generated.buildProp
-            buildRow.value.setText(generated.buildProp.fingerprint)
+            applyBuildPropPreset(BuildPropPresetRepository.presets.random())
         }
         toast("Active fields generated")
+    }
+
+    private fun syncNamesWithBuildModel(force: Boolean) {
+        val model = parseBuildProp(buildRow.value.text.toString(), buildProfile).model.ifBlank { buildProfile.model }.ifBlank { "Android" }
+        listOf("Device Name", "Bluetooth Name").forEach { label ->
+            val row = fieldRows[label] ?: return@forEach
+            if (force || row.value.text.toString().trim().isBlank()) {
+                row.value.setText(model)
+            }
+        }
+    }
+
+    private fun applyBuildPropPreset(preset: BuildPropPreset) {
+        buildProfile = preset.toProfile()
+        buildRow.value.setText(preset.fingerprint)
+        syncNamesWithBuildModel(force = true)
+    }
+
+    private fun showBuildPropChooser() {
+        buildPropChooserOpen = true
+        val grouped = BuildPropPresetRepository.grouped
+        val presets = BuildPropPresetRepository.presets
+        var selected = presets.firstOrNull { it.fingerprint == buildRow.value.text.toString().trim() } ?: presets.first()
+        var openPopup: PopupWindow? = null
+        val dialog = Dialog(context)
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(22, 18, 22, 16)
+            setBackgroundColor(dialogBg)
+        }
+        box.addView(TextView(context).apply {
+            text = "Build Prop Chooser"
+            textSize = 20f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(textColor)
+            setPadding(0, 0, 0, 14)
+        })
+        val familyField = chooserField()
+        val versionField = chooserField()
+        val modelField = chooserField()
+        val preview = TextView(context).apply {
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setTextColor(muted)
+            setPadding(0, 12, 0, 6)
+            setSingleLine(false)
+            maxLines = 3
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        fun label(text: String) = TextView(context).apply {
+            this.text = text
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(textColor)
+            setPadding(0, 10, 0, 5)
+        }
+        box.addView(label("Brand / Family"))
+        box.addView(familyField)
+        box.addView(label("Android Version"))
+        box.addView(versionField)
+        box.addView(label("Model"))
+        box.addView(modelField)
+        box.addView(label("Preview fingerprint"))
+        box.addView(preview)
+
+        fun families(): List<String> = grouped.keys.toList()
+        fun versions(family: String): List<String> = grouped[family]?.keys?.toList().orEmpty()
+        fun modelPresets(family: String, version: String): List<BuildPropPreset> = grouped[family]?.get(version).orEmpty()
+        fun models(family: String, version: String): List<String> = modelPresets(family, version).map { it.modelLabel }
+        fun modelPreset(family: String, version: String, modelLabel: String): BuildPropPreset =
+            modelPresets(family, version).firstOrNull { it.modelLabel == modelLabel }
+                ?: modelPresets(family, version).first()
+        fun renderSelection() {
+            familyField.text = selected.family
+            versionField.text = selected.androidVersionLabel
+            modelField.text = selected.modelLabel
+            preview.text = selected.fingerprint
+        }
+        fun selectFamily(family: String) {
+            val version = versions(family).firstOrNull() ?: return
+            selected = modelPresets(family, version).firstOrNull() ?: selected
+            renderSelection()
+        }
+        fun selectVersion(version: String) {
+            selected = modelPresets(selected.family, version).firstOrNull() ?: selected
+            renderSelection()
+        }
+        fun showMenu(anchor: TextView, items: List<String>, onPick: (String) -> Unit) {
+            openPopup?.dismiss()
+            val list = ListView(context).apply {
+                setBackgroundColor(panelBg)
+                divider = android.graphics.drawable.ColorDrawable(line)
+                dividerHeight = 1
+                adapter = object : android.widget.BaseAdapter() {
+                    override fun getCount(): Int = items.size
+                    override fun getItem(position: Int): String = items[position]
+                    override fun getItemId(position: Int): Long = position.toLong()
+                    override fun getView(position: Int, convertView: View?, parent: ViewGroup?): View {
+                        return ((convertView as? TextView) ?: TextView(context)).apply {
+                            text = items[position]
+                            textSize = 15f
+                            setTextColor(textColor)
+                            gravity = Gravity.CENTER_VERTICAL
+                            minHeight = 52
+                            setPadding(14, 0, 14, 0)
+                            setBackgroundColor(panelBg)
+                        }
+                    }
+                }
+                setOnItemClickListener { _, _, position, _ ->
+                    onPick(items[position])
+                    openPopup?.dismiss()
+                }
+            }
+            openPopup = PopupWindow(list, anchor.width.coerceAtLeast(280), ViewGroup.LayoutParams.WRAP_CONTENT, true).apply {
+                setBackgroundDrawable(android.graphics.drawable.ColorDrawable(panelBg))
+                isOutsideTouchable = true
+                elevation = 0f
+                showAsDropDown(anchor, 0, 4)
+            }
+        }
+        renderSelection()
+        familyField.setOnClickListener {
+            Log.d("BUILD_PROP_CHOOSER", "Family dropdown clicked")
+            showMenu(familyField, families()) { selectFamily(it) }
+        }
+        versionField.setOnClickListener {
+            Log.d("BUILD_PROP_CHOOSER", "Android dropdown clicked")
+            Log.d("BUILD_PROP_CHOOSER", "expandedAndroid=true")
+            showMenu(versionField, versions(selected.family)) { selectVersion(it) }
+        }
+        modelField.setOnClickListener {
+            Log.d("BUILD_PROP_CHOOSER", "Model dropdown clicked")
+            showMenu(modelField, models(selected.family, selected.androidVersionLabel)) {
+                selected = modelPreset(selected.family, selected.androidVersionLabel, it)
+                renderSelection()
+            }
+        }
+        val buttons = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, 14, 0, 0)
+        }
+        buttons.addView(dialogButton("Random").apply {
+            setOnClickListener {
+                if (!allowBuildPropAction()) return@setOnClickListener
+                selected = presets.random()
+                renderSelection()
+            }
+        }, LinearLayout.LayoutParams(0, 48, 1f).apply { setMargins(0, 0, 6, 0) })
+        buttons.addView(dialogButton("Cancel").apply {
+            setOnClickListener { dialog.dismiss() }
+        }, LinearLayout.LayoutParams(0, 48, 1f).apply { setMargins(6, 0, 6, 0) })
+        buttons.addView(dialogButton("Use This").apply {
+            setOnClickListener {
+                if (!allowBuildPropAction()) return@setOnClickListener
+                applyBuildPropPreset(selected)
+                dialog.dismiss()
+            }
+        }, LinearLayout.LayoutParams(0, 48, 1f).apply { setMargins(6, 0, 0, 0) })
+        box.addView(buttons)
+        dialog.setContentView(box)
+        dialog.setOnDismissListener {
+            openPopup?.dismiss()
+            buildPropChooserOpen = false
+        }
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(dialogBg))
+        dialog.show()
+    }
+
+    private fun allowBuildPropAction(): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastBuildPropActionAt < 400L) return false
+        lastBuildPropActionAt = now
+        return true
+    }
+
+    private fun chooserField(): TextView = TextView(context).apply {
+        textSize = 15f
+        setTextColor(textColor)
+        gravity = Gravity.CENTER_VERTICAL
+        minHeight = 52
+        setPadding(14, 0, 14, 0)
+        background = android.graphics.drawable.GradientDrawable().apply {
+            setColor(panelBg)
+            setStroke(1, line)
+            cornerRadius = 5f
+        }
     }
 
     private fun saveProfile(showToast: Boolean = true): Boolean {
@@ -383,7 +693,7 @@ class StatusScreen(
     private fun smartMaskedValue(label: String, mask: String): String? {
         val cleanMask = mask.trim()
         if (cleanMask.isBlank()) return null
-        repeat(if (label == "IMEI") 5000 else 60) {
+        repeat(if (label == "IMEI" || label == "IMEI 1" || label == "IMEI 2") 5000 else 60) {
             val generated = generatedValueFor(label) ?: return null
             val merged = mergeMask(cleanMask, generated)
             if (validateField(label, merged, true) == null) return merged
@@ -400,18 +710,35 @@ class StatusScreen(
     private fun generatedValueFor(label: String): String? {
         val generated = viewModel.generateProfileObject()
         return when (label) {
-            "IMEI" -> generated.imei.value
+            "IMEI", "IMEI 1" -> generated.imei.value
+            "IMEI 2" -> generated.imei2.value
+            "MEID" -> generated.meid.value
             "Android ID" -> generated.androidId.value
             "Google Services Framework ID" -> generated.gsfId.value
+            "Advertising ID" -> generated.advertisingId.value
+            "Limit Ad Tracking" -> generated.limitAdTrackingEnabled.value
+            "Google Account Email" -> generated.googleAccountEmail.value
+            "Device Name" -> generated.deviceName.value
             "MediaDrm ID" -> generated.mediaDrmId.value
             "Serial" -> generated.serial.value
             "Hardware ID" -> generated.hardwareId.value
             "MAC Address" -> generated.macAddress.value
             "MAC BSSID" -> generated.macBssid.value
             "Bluetooth MAC" -> generated.bluetoothMac.value
+            "Bluetooth Name" -> generated.bluetoothName.value
             "SIM Serial ID" -> generated.simSerialId.value
+            "Subscriber ID / IMSI" -> generated.subscriberId.value
             "Mobile No" -> generated.mobileNo.value
             "SIM Operator" -> generated.simOperator.value
+            "Network Operator" -> generated.networkOperator.value
+            "SIM Operator Name" -> generated.simOperatorName.value
+            "Network Operator Name" -> generated.networkOperatorName.value
+            "SIM Country ISO" -> generated.simCountryIso.value
+            "Network Country ISO" -> generated.networkCountryIso.value
+            "Phone Type" -> generated.phoneType.value
+            "Network Type" -> generated.networkType.value
+            "Data Network Type" -> generated.dataNetworkType.value
+            "Voice Network Type" -> generated.voiceNetworkType.value
             else -> null
         }
     }
@@ -421,23 +748,53 @@ class StatusScreen(
             val row = fieldRows[label]
             return IdentityFieldState(row?.value?.text?.toString()?.trim().orEmpty(), row?.enabled == true)
         }
+        val parsedBuild = parseBuildProp(buildRow.value.text.toString(), buildProfile)
+        val buildModel = parsedBuild.model.ifBlank { "Android" }
+        fun fieldWithFallback(label: String, fallback: String): IdentityFieldState {
+            val row = fieldRows[label]
+            val raw = row?.value?.text?.toString()?.trim().orEmpty()
+            val knownPresetModel = BuildPropPresetRepository.presets.any {
+                it.model.equals(raw, ignoreCase = true) && !it.model.equals(fallback, ignoreCase = true)
+            }
+            return IdentityFieldState(if (raw.isBlank() || knownPresetModel) fallback else raw, row?.enabled == true)
+        }
+        val deviceName = fieldWithFallback("Device Name", buildModel)
+        val bluetoothName = fieldWithFallback("Bluetooth Name", deviceName.value.ifBlank { buildModel })
         return IdentityProfile(
             name = viewModel.identityRepository.getProfile().name.ifBlank { "Default Profile" },
-            imei = field("IMEI"),
+            imei = field("IMEI 1"),
+            imei2 = field("IMEI 2"),
+            meid = field("MEID"),
+            deviceName = deviceName,
             serial = field("Serial"),
             hardwareId = field("Hardware ID"),
             macAddress = field("MAC Address"),
             macBssid = field("MAC BSSID"),
             macSsid = field("MAC SSID"),
             bluetoothMac = field("Bluetooth MAC"),
+            bluetoothName = bluetoothName,
             androidId = field("Android ID"),
+            subscriberId = field("Subscriber ID / IMSI"),
+            subscriberId2 = field("Subscriber ID / IMSI"),
             simSerialId = field("SIM Serial ID"),
             simSubIds = field("SIM Sub IDs"),
             mobileNo = field("Mobile No"),
             mediaDrmId = field("MediaDrm ID"),
             simOperator = field("SIM Operator"),
+            networkOperator = field("Network Operator"),
+            simOperatorName = field("SIM Operator Name"),
+            networkOperatorName = field("Network Operator Name"),
+            simCountryIso = field("SIM Country ISO"),
+            networkCountryIso = field("Network Country ISO"),
+            phoneType = field("Phone Type"),
+            networkType = field("Network Type"),
+            dataNetworkType = field("Data Network Type"),
+            voiceNetworkType = field("Voice Network Type"),
             gsfId = field("Google Services Framework ID"),
-            buildProp = parseBuildProp(buildRow.value.text.toString(), buildProfile),
+            advertisingId = field("Advertising ID"),
+            limitAdTrackingEnabled = field("Limit Ad Tracking"),
+            googleAccountEmail = field("Google Account Email"),
+            buildProp = parsedBuild,
             buildPropEnabled = buildRow.enabled,
             draft = false
         )
@@ -602,7 +959,8 @@ class StatusScreen(
             cornerRadius = 5f
         }
         styleIcon(this, active)
-        layoutParams = LinearLayout.LayoutParams(30, 28).apply { setMargins(5, 0, 0, 0) }
+        layoutParams = LinearLayout.LayoutParams(38, 34).apply { setMargins(8, 0, 0, 0) }
+        setPadding(7, 5, 7, 5)
     }
 
     private fun styleIcon(button: ImageButton, active: Boolean) {
@@ -701,16 +1059,27 @@ class StatusScreen(
         if (!enabled) return null
         val value = raw.trim()
         return when (label) {
-            "IMEI" -> if (value.matches(Regex("[0-9]{15}")) && luhnValid(value)) null else "IMEI harus 15 digit dan lolos Luhn checksum."
+            "IMEI", "IMEI 1", "IMEI 2" -> if (value.matches(Regex("[0-9]{15}")) && luhnValid(value)) null else "$label harus 15 digit dan lolos Luhn checksum."
+            "MEID" -> if (value.matches(Regex("[0-9A-Fa-f]{14}"))) null else "MEID harus 14 karakter hex."
             "Android ID" -> if (value.matches(Regex("[0-9a-fA-F]{16}"))) null else "Android ID harus 16 karakter hex."
             "Google Services Framework ID" -> if (value.matches(Regex("[0-9a-fA-F]{16}"))) null else "Google Services Framework ID harus 16 karakter hex."
+            "Advertising ID" -> if (value.matches(Regex("(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"))) null else "Advertising ID harus UUID valid."
+            "Limit Ad Tracking" -> if (value.equals("true", true) || value.equals("false", true)) null else "Limit Ad Tracking harus true atau false."
+            "Google Account Email" -> if (value.matches(Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$"))) null else "Google Account Email harus format email valid."
+            "Device Name" -> if (value.isNotBlank()) null else "Device Name tidak boleh kosong."
             "MediaDrm ID" -> if (value.matches(Regex("[0-9a-fA-F]{16,64}"))) null else "MediaDrm ID harus hex dan tidak kosong."
             "Serial" -> if (value.isNotBlank()) null else "Serial tidak boleh kosong."
             "Hardware ID" -> if (value.isNotBlank()) null else "Hardware ID tidak boleh kosong."
             "MAC Address", "MAC BSSID", "Bluetooth MAC" -> if (value.matches(Regex("(?i)^([0-9A-F]{2}:){5}[0-9A-F]{2}$"))) null else "$label harus format XX:XX:XX:XX:XX:XX."
+            "Bluetooth Name" -> if (value.trim().length in 1..64 && value.none { it.isISOControl() }) null else "Bluetooth Name tidak boleh kosong."
             "SIM Serial ID" -> if (value.matches(Regex("[0-9]{19,20}"))) null else "SIM Serial ID harus 19-20 digit."
+            "Subscriber ID / IMSI", "SIM Sub IDs" -> if (value.matches(Regex("[0-9]{14,16}"))) null else "$label harus 14-16 digit numerik."
             "Mobile No" -> if (value.matches(Regex("\\+?[0-9]{8,15}"))) null else "Mobile No hanya boleh angka dan tanda + dengan panjang wajar."
-            "SIM Operator" -> if (value.matches(Regex("[0-9]{5,6}"))) null else "SIM Operator harus MCC+MNC numerik, contoh 51010."
+            "SIM Operator", "Network Operator" -> if (value.matches(Regex("[0-9]{5,6}"))) null else "$label harus MCC+MNC numerik, contoh 51010."
+            "SIM Operator Name", "Network Operator Name" -> if (value.isNotBlank()) null else "$label tidak boleh kosong."
+            "SIM Country ISO", "Network Country ISO" -> if (value.matches(Regex("[a-z]{2}"))) null else "$label harus ISO 2 huruf kecil, contoh id."
+            "Phone Type" -> if (value.toIntOrNull() in setOf(0, 1, 2)) null else "Phone Type harus integer valid."
+            "Network Type", "Data Network Type", "Voice Network Type" -> if (value.toIntOrNull() in setOf(0, 1, 2, 3, 8, 9, 10, 13, 15, 20)) null else "$label harus integer network type valid."
             "Build Prop" -> if (value.isNotBlank() && value.contains("/") && value.contains(":")) null else "Build Prop harus fingerprint/build string dan mengandung / serta :."
             else -> null
         }
@@ -754,43 +1123,10 @@ class StatusScreen(
         override fun afterTextChanged(s: Editable?) = after()
     }
 
-    private fun presets(): List<BuildPropProfile> = listOf(
-        BuildPropProfile(
-            fingerprint = "samsung/a52sxq/a52sxq:12/SP1A.210812.016/A528BXXS1DVL2:user/release-keys",
-            brand = "samsung",
-            model = "SM-A528B",
-            manufacturer = "samsung",
-            device = "a52sxq",
-            name = "a52sxq",
-            board = "lahaina",
-            hardware = "qcom",
-            buildId = "SP1A.210812.016",
-            displayId = "SP1A.210812.016.A528BXXS1DVL2",
-            versionRelease = "12",
-            versionSdk = "31",
-            securityPatch = "2022-12-01"
-        ),
-        BuildPropProfile.default(),
-        BuildPropProfile(
-            fingerprint = "Xiaomi/vayu/vayu:11/RKQ1.200826.002/V12.5.7.0.RJUMIXM:user/release-keys",
-            brand = "Xiaomi",
-            model = "M2102J20SG",
-            manufacturer = "Xiaomi",
-            device = "vayu",
-            name = "vayu",
-            board = "vayu",
-            hardware = "qcom",
-            buildId = "RKQ1.200826.002",
-            displayId = "RKQ1.200826.002",
-            versionRelease = "11",
-            versionSdk = "30",
-            securityPatch = "2021-12-01"
-        )
-    )
-
     private fun parseBuildProp(raw: String, fallback: BuildPropProfile): BuildPropProfile {
         val trimmed = raw.trim()
         if (trimmed.isBlank()) return fallback
+        BuildPropPresetRepository.findByFingerprint(trimmed)?.let { return it }
         if (!trimmed.contains("=") && trimmed.contains(":") && trimmed.contains("/")) {
             return fallback.copy(fingerprint = trimmed)
         }

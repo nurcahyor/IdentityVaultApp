@@ -94,39 +94,77 @@ data class BuildPropProfile(
 data class IdentityProfile(
     val name: String,
     val imei: IdentityFieldState,
+    val imei2: IdentityFieldState = IdentityFieldState(""),
+    val meid: IdentityFieldState = IdentityFieldState(""),
+    val deviceName: IdentityFieldState = IdentityFieldState(""),
     val serial: IdentityFieldState,
     val hardwareId: IdentityFieldState,
     val macAddress: IdentityFieldState,
     val macBssid: IdentityFieldState,
     val macSsid: IdentityFieldState,
     val bluetoothMac: IdentityFieldState,
+    val bluetoothName: IdentityFieldState = IdentityFieldState(""),
     val androidId: IdentityFieldState,
+    val subscriberId: IdentityFieldState = IdentityFieldState(""),
+    val subscriberId2: IdentityFieldState = IdentityFieldState("", enabled = false),
     val simSerialId: IdentityFieldState,
     val simSubIds: IdentityFieldState,
     val mobileNo: IdentityFieldState,
     val mediaDrmId: IdentityFieldState,
     val simOperator: IdentityFieldState,
+    val networkOperator: IdentityFieldState = IdentityFieldState(""),
+    val simOperatorName: IdentityFieldState = IdentityFieldState(""),
+    val networkOperatorName: IdentityFieldState = IdentityFieldState(""),
+    val simCountryIso: IdentityFieldState = IdentityFieldState(""),
+    val networkCountryIso: IdentityFieldState = IdentityFieldState(""),
+    val phoneType: IdentityFieldState = IdentityFieldState("1"),
+    val networkType: IdentityFieldState = IdentityFieldState("13"),
+    val dataNetworkType: IdentityFieldState = IdentityFieldState("13"),
+    val voiceNetworkType: IdentityFieldState = IdentityFieldState("13"),
     val gsfId: IdentityFieldState,
+    val advertisingId: IdentityFieldState = IdentityFieldState(""),
+    val limitAdTrackingEnabled: IdentityFieldState = IdentityFieldState("false"),
+    val googleAccountEmail: IdentityFieldState = IdentityFieldState(""),
     val buildProp: BuildPropProfile,
     val buildPropEnabled: Boolean = true,
     val draft: Boolean = false
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("name", name)
+        .put("imei1", imei.toJson())
         .put("imei", imei.toJson())
+        .put("imei2", imei2.toJson())
+        .put("meid", meid.toJson())
+        .put("deviceName", deviceName.toJson())
         .put("serial", serial.toJson())
         .put("hardwareId", hardwareId.toJson())
         .put("macAddress", macAddress.toJson())
         .put("macBssid", macBssid.toJson())
         .put("macSsid", macSsid.toJson())
         .put("bluetoothMac", bluetoothMac.toJson())
+        .put("bluetoothName", bluetoothName.toJson())
         .put("androidId", androidId.toJson())
+        .put("subscriberId", subscriberId.toJson())
+        .put("subscriberId2", subscriberId2.toJson())
         .put("simSerialId", simSerialId.toJson())
         .put("simSubIds", simSubIds.toJson())
         .put("mobileNo", mobileNo.toJson())
         .put("mediaDrmId", mediaDrmId.toJson())
         .put("simOperator", simOperator.toJson())
+        .put("networkOperator", networkOperator.toJson())
+        .put("simOperatorName", simOperatorName.toJson())
+        .put("networkOperatorName", networkOperatorName.toJson())
+        .put("simCountryIso", simCountryIso.toJson())
+        .put("networkCountryIso", networkCountryIso.toJson())
+        .put("phoneType", phoneType.toJson())
+        .put("networkType", networkType.toJson())
+        .put("dataNetworkType", dataNetworkType.toJson())
+        .put("voiceNetworkType", voiceNetworkType.toJson())
         .put("gsfId", gsfId.toJson())
+        .put("googleServicesFrameworkId", gsfId.toJson())
+        .put("advertisingId", advertisingId.toJson())
+        .put("limitAdTrackingEnabled", limitAdTrackingEnabled.toJson())
+        .put("googleAccountEmail", googleAccountEmail.toJson())
         .put("buildProp", buildProp.toJson())
         .put("buildPropEnabled", buildPropEnabled)
         .put("draft", draft)
@@ -134,24 +172,64 @@ data class IdentityProfile(
     companion object {
         fun fromJson(json: JSONObject): IdentityProfile = IdentityProfile(
             name = json.optString("name", "Default Profile"),
-            imei = IdentityFieldState.fromJson(json.optJSONObject("imei")),
+            imei = IdentityFieldState.fromJson(json.optJSONObject("imei1") ?: json.optJSONObject("imei")),
+            imei2 = IdentityFieldState.fromJson(json.optJSONObject("imei2"), IdentityFieldState.fromJson(json.optJSONObject("imei1") ?: json.optJSONObject("imei")).value),
+            meid = IdentityFieldState.fromJson(json.optJSONObject("meid")),
+            deviceName = IdentityFieldState.fromJson(json.optJSONObject("deviceName"), BuildPropProfile.fromJson(json.optJSONObject("buildProp")).model),
             serial = IdentityFieldState.fromJson(json.optJSONObject("serial")),
             hardwareId = IdentityFieldState.fromJson(json.optJSONObject("hardwareId")),
             macAddress = IdentityFieldState.fromJson(json.optJSONObject("macAddress")),
             macBssid = IdentityFieldState.fromJson(json.optJSONObject("macBssid")),
             macSsid = IdentityFieldState.fromJson(json.optJSONObject("macSsid")),
             bluetoothMac = IdentityFieldState.fromJson(json.optJSONObject("bluetoothMac")),
+            bluetoothName = IdentityFieldState.fromJson(
+                json.optJSONObject("bluetoothName"),
+                IdentityFieldState.fromJson(json.optJSONObject("deviceName"), BuildPropProfile.fromJson(json.optJSONObject("buildProp")).model).value
+                    .ifBlank { BuildPropProfile.fromJson(json.optJSONObject("buildProp")).model }
+                    .ifBlank { "Android" }
+            ),
             androidId = IdentityFieldState.fromJson(json.optJSONObject("androidId")),
+            subscriberId = IdentityFieldState.fromJson(json.optJSONObject("subscriberId") ?: json.optJSONObject("simSubIds")),
+            subscriberId2 = IdentityFieldState.fromJson(json.optJSONObject("subscriberId2"), IdentityFieldState.fromJson(json.optJSONObject("subscriberId") ?: json.optJSONObject("simSubIds")).value),
             simSerialId = IdentityFieldState.fromJson(json.optJSONObject("simSerialId")),
             simSubIds = IdentityFieldState.fromJson(json.optJSONObject("simSubIds")),
             mobileNo = IdentityFieldState.fromJson(json.optJSONObject("mobileNo")),
             mediaDrmId = IdentityFieldState.fromJson(json.optJSONObject("mediaDrmId")),
             simOperator = IdentityFieldState.fromJson(json.optJSONObject("simOperator")),
-            gsfId = IdentityFieldState.fromJson(json.optJSONObject("gsfId")),
+            networkOperator = IdentityFieldState.fromJson(json.optJSONObject("networkOperator"), IdentityFieldState.fromJson(json.optJSONObject("simOperator")).value),
+            simOperatorName = IdentityFieldState.fromJson(json.optJSONObject("simOperatorName"), operatorName(IdentityFieldState.fromJson(json.optJSONObject("simOperator")).value)),
+            networkOperatorName = IdentityFieldState.fromJson(json.optJSONObject("networkOperatorName"), operatorName(IdentityFieldState.fromJson(json.optJSONObject("networkOperator") ?: json.optJSONObject("simOperator")).value)),
+            simCountryIso = IdentityFieldState.fromJson(json.optJSONObject("simCountryIso"), countryIso(IdentityFieldState.fromJson(json.optJSONObject("simOperator")).value)),
+            networkCountryIso = IdentityFieldState.fromJson(json.optJSONObject("networkCountryIso"), countryIso(IdentityFieldState.fromJson(json.optJSONObject("networkOperator") ?: json.optJSONObject("simOperator")).value)),
+            phoneType = IdentityFieldState.fromJson(json.optJSONObject("phoneType"), "1"),
+            networkType = IdentityFieldState.fromJson(json.optJSONObject("networkType"), "13"),
+            dataNetworkType = IdentityFieldState.fromJson(json.optJSONObject("dataNetworkType"), "13"),
+            voiceNetworkType = IdentityFieldState.fromJson(json.optJSONObject("voiceNetworkType"), "13"),
+            gsfId = IdentityFieldState.fromJson(json.optJSONObject("googleServicesFrameworkId") ?: json.optJSONObject("gsfId")),
+            advertisingId = IdentityFieldState.fromJson(json.optJSONObject("advertisingId")),
+            limitAdTrackingEnabled = IdentityFieldState.fromJson(json.optJSONObject("limitAdTrackingEnabled"), "false"),
+            googleAccountEmail = IdentityFieldState.fromJson(json.optJSONObject("googleAccountEmail")),
             buildProp = BuildPropProfile.fromJson(json.optJSONObject("buildProp")),
             buildPropEnabled = json.optBoolean("buildPropEnabled", true),
             draft = json.optBoolean("draft", false)
         )
+
+        private fun operatorName(operator: String): String = when (operator) {
+            "51010" -> "Telkomsel"
+            "310260" -> "T-Mobile"
+            "311480" -> "Verizon"
+            "302720" -> "Rogers"
+            "46601" -> "FarEasTone"
+            else -> "Telkomsel"
+        }
+
+        private fun countryIso(operator: String): String = when {
+            operator.startsWith("510") -> "id"
+            operator.startsWith("310") || operator.startsWith("311") -> "us"
+            operator.startsWith("302") -> "ca"
+            operator.startsWith("466") -> "tw"
+            else -> "id"
+        }
     }
 }
 
