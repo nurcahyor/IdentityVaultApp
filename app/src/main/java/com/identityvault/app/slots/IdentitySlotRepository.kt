@@ -95,6 +95,46 @@ class IdentitySlotRepository(context: Context) {
         updateGroup(group.copy(apps = group.apps.filterNot { it.packageName == packageName }))
     }
 
+    fun activeGroupId(): String = prefs.getString(KEY_ACTIVE_GROUP_ID, "").orEmpty()
+
+    fun isGroupActive(groupId: String): Boolean = activeGroupId() == groupId
+
+    fun deactivateGroup(groupId: String) {
+        if (isGroupActive(groupId)) {
+            prefs.edit().remove(KEY_ACTIVE_GROUP_ID).apply()
+            logger.add("INFO", "IDENTITY_SLOT", "Identity slot group deactivated", detail = "groupId=$groupId")
+        }
+    }
+
+    fun activateGroup(groupId: String): SlotBackupReport {
+        val group = getGroup(groupId) ?: return failedReport("Activation Failed", "Group not found")
+        val activeProfile = identityRepository.getProfile()
+        val assigned = assignedProfiles()
+        group.apps.forEach { app ->
+            if (app.packageName.isNotBlank() && assigned.optJSONObject(app.packageName) == null) {
+                assigned.put(app.packageName, activeProfile.toJson())
+            }
+        }
+        prefs.edit()
+            .putString(KEY_ASSIGNED_PROFILES, assigned.toString())
+            .putString(KEY_ACTIVE_GROUP_ID, groupId)
+            .apply()
+        logger.add("SUCCESS", "IDENTITY_SLOT", "Identity slot group activated", detail = "group=${group.name}, apps=${group.apps.size}")
+        val steps = listOf(
+            BackupStep("Active group", "OK", group.name),
+            BackupStep("Assigned apps", "OK", group.apps.joinToString { it.packageName }),
+            BackupStep("Build Prop", verifyBuild(activeProfile)),
+            BackupStep("SystemProperties", verifySystemProperties(activeProfile))
+        )
+        return SlotBackupReport(
+            title = "Identity Slot Active",
+            summary = "Identity slot active for ${group.name}.",
+            steps = steps,
+            reportText = steps.joinToString("\n") { "${it.title}: ${it.status} ${it.detail}" },
+            hasWarnings = steps.any { it.status != "OK" }
+        )
+    }
+
     fun assignCurrentProfileToApp(packageName: String): SlotBackupReport {
         val profile = identityRepository.getProfile()
         saveAssignedProfile(packageName, profile)
@@ -299,6 +339,8 @@ class IdentitySlotRepository(context: Context) {
     }
 
     fun assignedProfileForPackage(packageName: String): IdentityProfile? {
+        val activeGroup = getGroup(activeGroupId()) ?: return null
+        if (activeGroup.apps.none { it.packageName == packageName }) return null
         val assigned = assignedProfiles().optJSONObject(packageName)
         if (assigned != null) return IdentityProfile.fromJson(assigned)
         val slot = getSlots().firstOrNull {
@@ -510,5 +552,6 @@ class IdentitySlotRepository(context: Context) {
         private const val KEY_GROUPS = "groups"
         private const val KEY_SLOTS = "slots"
         private const val KEY_ASSIGNED_PROFILES = "assigned_profiles"
+        private const val KEY_ACTIVE_GROUP_ID = "active_group_id"
     }
 }

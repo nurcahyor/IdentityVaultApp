@@ -35,12 +35,14 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.identityvault.app.log.DetailedLogRepository
+import com.identityvault.app.root.RootShell
 import java.util.Date
 
 class IdentitySlotsScreen(private val context: Context) {
     private val activity = context as Activity
     private val repository = IdentitySlotRepository(context)
     private val logger = DetailedLogRepository(context)
+    private val rootShell = RootShell()
     private val bg = Color.rgb(13, 17, 24)
     private val panelBg = Color.rgb(19, 24, 32)
     private val softBg = Color.rgb(25, 33, 44)
@@ -48,9 +50,11 @@ class IdentitySlotsScreen(private val context: Context) {
     private val textColor = Color.rgb(225, 231, 239)
     private val muted = Color.rgb(142, 153, 168)
     private val accent = Color.rgb(69, 178, 166)
+    private val success = Color.rgb(77, 196, 128)
     private val warning = Color.rgb(220, 174, 90)
     private lateinit var list: LinearLayout
     private var pending: PendingOperation? = null
+    private var activatingGroupId: String? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var installedAppsCache: List<IdentityGroupApp>? = null
     private var appsLoading = false
@@ -107,10 +111,11 @@ class IdentitySlotsScreen(private val context: Context) {
     }
 
     private fun groupCard(group: IdentityGroup): View {
+        val active = repository.isGroupActive(group.id)
         val card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(12, 10, 12, 11)
-            background = rounded(panelBg, 1, line, 8f)
+            background = rounded(panelBg, if (active) 2 else 1, if (active) success else line, 8f)
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 setMargins(0, 0, 0, 12)
             }
@@ -118,6 +123,10 @@ class IdentitySlotsScreen(private val context: Context) {
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = 46
+            setPadding(0, 1, 0, 1)
+            clipToPadding = false
+            clipChildren = false
         }
         header.addView(TextView(context).apply {
             text = if (group.collapsed) ">" else "v"
@@ -143,8 +152,29 @@ class IdentitySlotsScreen(private val context: Context) {
                 setTextColor(muted)
             })
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        header.addView(iconText("+").apply { setOnClickListener { showManageApps(group) } }, LinearLayout.LayoutParams(40, 38))
-        header.addView(iconText("\u22ee").apply { setOnClickListener { showGroupMenu(group, this) } }, LinearLayout.LayoutParams(36, 38))
+        val actions = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(6, 0, 14, 0)
+            clipToPadding = false
+            clipChildren = false
+            minimumHeight = 40
+        }
+        actions.addView(slotToggle(active).apply {
+            alpha = if (activatingGroupId == null) 1f else 0.55f
+            isEnabled = activatingGroupId == null
+            setOnClickListener {
+                if (active) {
+                    repository.deactivateGroup(group.id)
+                    render()
+                } else {
+                    confirmActivateGroup(group)
+                }
+            }
+        }, LinearLayout.LayoutParams(40, 40).apply { setMargins(0, 0, 12, 0) })
+        actions.addView(iconText("+").apply { setOnClickListener { showManageApps(group) } }, LinearLayout.LayoutParams(40, 40).apply { setMargins(0, 0, 10, 0) })
+        actions.addView(iconText("\u22ee").apply { setOnClickListener { showGroupMenu(group, this) } }, LinearLayout.LayoutParams(40, 40))
+        header.addView(actions)
         card.addView(header)
         if (!group.collapsed) {
             if (group.apps.isEmpty()) {
@@ -265,6 +295,118 @@ class IdentitySlotsScreen(private val context: Context) {
                 true
             }
         }.show()
+    }
+
+    private fun confirmActivateGroup(group: IdentityGroup) {
+        if (group.apps.isEmpty()) {
+            Toast.makeText(context, "Group belum punya aplikasi", Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(context)
+            .setTitle("Aktifkan identity slot?")
+            .setMessage(
+                "Identity slot ini akan diaktifkan untuk aplikasi dalam group ini.\n" +
+                    "Proses akan menyalakan mode pesawat, force stop aplikasi, menghapus data/cache aplikasi di group, lalu mematikan mode pesawat kembali.\n" +
+                    "Lanjutkan?"
+            )
+            .setNegativeButton("Batal") { _, _ -> render() }
+            .setPositiveButton("Aktifkan") { _, _ -> activateGroup(group) }
+            .show()
+    }
+
+    private fun activateGroup(group: IdentityGroup) {
+        activatingGroupId = group.id
+        render()
+        val steps = listOf(
+            "Mengaktifkan mode pesawat...",
+            "Force stop aplikasi...",
+            "Menghapus data aplikasi...",
+            "Mematikan mode pesawat...",
+            "Mengaktifkan identity slot...",
+            "Selesai"
+        )
+        val stepViews = mutableListOf<TextView>()
+        val dialog = progressListDialog("Aktifkan Identity Slot", steps, stepViews)
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(panelBg))
+        Thread {
+            fun update(index: Int, status: String, color: Int = muted) {
+                mainHandler.post {
+                    stepViews.getOrNull(index)?.apply {
+                        text = "$status ${steps[index]}"
+                        setTextColor(color)
+                    }
+                }
+            }
+            fun runRootStep(index: Int, title: String, command: String, timeout: Long = 8L) {
+                update(index, "RUNNING", accent)
+                logger.add("INFO", "IDENTITY_SLOT", title, detail = "group=${group.name}")
+                val result = rootShell.run(command, timeout)
+                val ok = result.exitCode == 0
+                logger.add(
+                    if (ok) "SUCCESS" else "WARNING",
+                    "IDENTITY_SLOT",
+                    "$title ${if (ok) "OK" else "warning"}",
+                    detail = listOf(result.output, result.error).filter { it.isNotBlank() }.joinToString("\n")
+                )
+                update(index, if (ok) "OK" else "WARN", if (ok) success else warning)
+            }
+            runRootStep(0, "Mengaktifkan mode pesawat", "settings put global airplane_mode_on 1; am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true", 6)
+            update(1, "RUNNING", accent)
+            group.apps.forEach { app ->
+                logger.add("INFO", "IDENTITY_SLOT", "Force stop aplikasi", packageName = app.packageName, detail = group.name)
+                val result = rootShell.run("am force-stop ${app.packageName}", 6)
+                logger.add(if (result.exitCode == 0) "SUCCESS" else "WARNING", "IDENTITY_SLOT", "Force stop ${app.packageName}", packageName = app.packageName, detail = result.error)
+            }
+            update(1, "OK", success)
+            update(2, "RUNNING", accent)
+            group.apps.forEach { app ->
+                logger.add("INFO", "IDENTITY_SLOT", "Menghapus data aplikasi", packageName = app.packageName, detail = group.name)
+                val result = rootShell.run("pm clear ${app.packageName}", 12)
+                logger.add(if (result.exitCode == 0) "SUCCESS" else "WARNING", "IDENTITY_SLOT", "Clear data ${app.packageName}", packageName = app.packageName, detail = listOf(result.output, result.error).filter { it.isNotBlank() }.joinToString("\n"))
+            }
+            update(2, "OK", success)
+            runRootStep(3, "Mematikan mode pesawat", "settings put global airplane_mode_on 0; am broadcast -a android.intent.action.AIRPLANE_MODE --ez state false", 6)
+            update(4, "RUNNING", accent)
+            val report = repository.activateGroup(group.id)
+            logger.add("SUCCESS", "IDENTITY_SLOT", "Identity slot aktif", detail = "group=${group.name}")
+            update(4, if (report.hasWarnings) "WARN" else "OK", if (report.hasWarnings) warning else success)
+            update(5, "OK", success)
+            mainHandler.postDelayed({
+                activatingGroupId = null
+                dialog.dismiss()
+                showStatusReport("Identity Slot Aktif", "Identity slot aktif untuk ${group.name}.", report.steps, report.reportText)
+                render()
+            }, 450)
+        }.start()
+    }
+
+    private fun progressListDialog(title: String, steps: List<String>, stepViews: MutableList<TextView>): Dialog {
+        val dialog = Dialog(context)
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(20, 18, 20, 18)
+            setBackgroundColor(panelBg)
+        }
+        box.addView(TextView(context).apply {
+            text = title
+            textSize = 18f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(textColor)
+            setPadding(0, 0, 0, 12)
+        })
+        steps.forEachIndexed { index, step ->
+            val view = TextView(context).apply {
+                text = "${if (index == 0) "RUNNING" else "PENDING"} $step"
+                textSize = 12.5f
+                setTextColor(if (index == 0) accent else muted)
+                setPadding(0, 5, 0, 5)
+            }
+            stepViews += view
+            box.addView(view)
+        }
+        dialog.setContentView(box)
+        return dialog
     }
 
     private fun showManageApps(group: IdentityGroup) {
@@ -873,10 +1015,31 @@ class IdentitySlotsScreen(private val context: Context) {
 
     private fun iconText(value: String): TextView = TextView(context).apply {
         text = value
-        textSize = 21f
+        textSize = if (value == "\u22ee") 17f else 20f
+        typeface = Typeface.DEFAULT_BOLD
         gravity = Gravity.CENTER
+        includeFontPadding = false
         setTextColor(accent)
-        background = rounded(Color.TRANSPARENT, 0, Color.TRANSPARENT, 6f)
+        minWidth = 40
+        minHeight = 40
+        setPadding(0, 0, 0, if (value == "\u22ee") 0 else 2)
+        background = rounded(Color.TRANSPARENT, 0, Color.TRANSPARENT, 8f)
+    }
+
+    private fun slotToggle(active: Boolean): FrameLayout = FrameLayout(context).apply {
+        val trackColor = if (active) Color.rgb(34, 92, 68) else Color.rgb(31, 37, 45)
+        val borderColor = if (active) Color.rgb(87, 205, 139) else Color.rgb(45, 54, 66)
+        background = rounded(trackColor, 1, borderColor, 14f)
+        setPadding(4, 4, 4, 4)
+        minimumWidth = 40
+        minimumHeight = 40
+        val knobSize = 20
+        addView(View(context).apply {
+            background = rounded(if (active) Color.rgb(86, 214, 139) else Color.rgb(132, 142, 154), 0, Color.TRANSPARENT, 20f)
+        }, FrameLayout.LayoutParams(knobSize, knobSize, if (active) Gravity.END or Gravity.CENTER_VERTICAL else Gravity.START or Gravity.CENTER_VERTICAL).apply {
+            leftMargin = if (active) 0 else 0
+            rightMargin = if (active) 0 else 0
+        })
     }
 
     private fun fab(): TextView = TextView(context).apply {
