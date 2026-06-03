@@ -10,7 +10,12 @@ class ModuleStatusRepository(private val context: Context) {
     private val prefs = context.getSharedPreferences("module_status", Context.MODE_PRIVATE)
     private val statusFile: File = File(context.filesDir, "module_status.json")
 
-    fun setHookActive(packageName: String? = null, appliedFields: List<String> = emptyList()) {
+    fun setHookActive(
+        packageName: String? = null,
+        appliedFields: List<String> = emptyList(),
+        sdkInt: Int? = null,
+        markerSummary: String? = null
+    ) {
         val packages = getHookedPackages().toMutableSet()
         if (!packageName.isNullOrBlank()) packages += packageName
         val fieldMap = getAppliedFieldsByPackage().toMutableMap()
@@ -19,13 +24,19 @@ class ModuleStatusRepository(private val context: Context) {
             fields += appliedFields
             fieldMap[packageName] = fields.sorted()
         }
+        val summaries = getMarkerSummaries().toMutableMap()
+        if (!packageName.isNullOrBlank() && !markerSummary.isNullOrBlank()) {
+            summaries[packageName] = runCatching { JSONObject(markerSummary) }.getOrNull() ?: JSONObject()
+        }
         prefs.edit()
             .putBoolean("hook_active", true)
             .putStringSet("hooked_packages", packages)
             .putString("applied_fields", JSONObject(fieldMap.mapValues { JSONArray(it.value) }).toString())
+            .putString("marker_summaries", JSONObject(summaries).toString())
+            .putInt("last_sdk", sdkInt ?: prefs.getInt("last_sdk", 0))
             .putLong("last_hook_at", System.currentTimeMillis())
             .apply()
-        writeStatusFile(true, packages.toList(), fieldMap)
+        writeStatusFile(true, packages.toList(), fieldMap, summaries)
     }
 
     fun hookActive(): Boolean = prefs.getBoolean("hook_active", false) || statusFileJson().optBoolean("hook_active", false)
@@ -50,6 +61,13 @@ class ModuleStatusRepository(private val context: Context) {
         return combined
     }
 
+    fun getMarkerSummaries(): Map<String, JSONObject> {
+        val map = linkedMapOf<String, JSONObject>()
+        readSummaryMap(JSONObject(prefs.getString("marker_summaries", "{}") ?: "{}")).forEach { map[it.key] = it.value }
+        readSummaryMap(statusFileJson().optJSONObject("marker_summaries") ?: JSONObject()).forEach { map[it.key] = it.value }
+        return map
+    }
+
     fun clearMarker() {
         prefs.edit().clear().apply()
         if (statusFile.exists()) statusFile.delete()
@@ -70,6 +88,7 @@ class ModuleStatusRepository(private val context: Context) {
         .put("hook_active", hookActive())
         .put("hooked_packages", JSONArray(getHookedPackages()))
         .put("applied_fields", JSONObject(getAppliedFieldsByPackage().mapValues { JSONArray(it.value) }))
+        .put("marker_summaries", JSONObject(getMarkerSummaries()))
 
     fun importJson(json: JSONObject) {
         val packages = mutableSetOf<String>()
@@ -81,16 +100,17 @@ class ModuleStatusRepository(private val context: Context) {
             .apply()
         val fields = readFieldMap(json.optJSONObject("applied_fields") ?: JSONObject())
         prefs.edit().putString("applied_fields", JSONObject(fields.mapValues { JSONArray(it.value) }).toString()).apply()
-        writeStatusFile(json.optBoolean("hook_active", false), packages.toList(), fields)
+        writeStatusFile(json.optBoolean("hook_active", false), packages.toList(), fields, readSummaryMap(json.optJSONObject("marker_summaries") ?: JSONObject()))
     }
 
-    private fun writeStatusFile(active: Boolean, packages: List<String>, fields: Map<String, List<String>>) {
+    private fun writeStatusFile(active: Boolean, packages: List<String>, fields: Map<String, List<String>>, summaries: Map<String, JSONObject>) {
         runCatching {
             statusFile.writeText(
                 JSONObject()
                     .put("hook_active", active)
                     .put("hooked_packages", JSONArray(packages))
                     .put("applied_fields", JSONObject(fields.mapValues { JSONArray(it.value) }))
+                    .put("marker_summaries", JSONObject(summaries))
                     .toString()
             )
         }
@@ -109,6 +129,16 @@ class ModuleStatusRepository(private val context: Context) {
             val key = keys.next()
             val arr = json.optJSONArray(key) ?: JSONArray()
             map[key] = List(arr.length()) { arr.optString(it) }.filter { it.isNotBlank() }.sorted()
+        }
+        return map
+    }
+
+    private fun readSummaryMap(json: JSONObject): Map<String, JSONObject> {
+        val map = linkedMapOf<String, JSONObject>()
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            json.optJSONObject(key)?.let { map[key] = it }
         }
         return map
     }

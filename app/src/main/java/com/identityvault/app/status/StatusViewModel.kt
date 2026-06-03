@@ -9,6 +9,7 @@ import com.identityvault.app.identity.IdentityValidator
 import com.identityvault.app.log.LogRepository
 import com.identityvault.app.root.MagiskChecker
 import com.identityvault.app.root.RootChecker
+import com.identityvault.app.root.RootShell
 
 class StatusViewModel(context: Context) {
     private val appContext = context.applicationContext
@@ -17,6 +18,7 @@ class StatusViewModel(context: Context) {
     private val moduleStatusRepository = ModuleStatusRepository(appContext)
     private val lsposedChecker = LsposedChecker(appContext, moduleStatusRepository)
     private val rootChecker = RootChecker(appContext)
+    private val rootShell = RootShell()
     private val magiskChecker = MagiskChecker(appContext)
     private val generator = IdentityProfileGenerator()
     private val validator = IdentityValidator()
@@ -77,7 +79,33 @@ class StatusViewModel(context: Context) {
         profileApplied = true
         prefs.edit().putBoolean("applied", true).putLong("applied_at", System.currentTimeMillis()).apply()
         logRepository.add("Profile applied for hook provider")
+        restartSettingsIfRoot()
     }
 
     fun validateCurrent(): Map<String, String> = validator.validate(identityRepository.getProfile())
+
+    fun diagnosticsHookedPackages(): List<Pair<String, Boolean>> {
+        val seen = (moduleStatusRepository.getHookedPackages() + logRepository.getDetailedRepository().getEntries().map { it.packageName })
+            .filter { it.isNotBlank() }
+            .toSet()
+        return listOf(
+            "com.tinsoft.fulldeviceinfo",
+            "com.android.settings",
+            "com.android.providers.settings",
+            "android"
+        ).map { it to seen.contains(it) }
+    }
+
+    private fun restartSettingsIfRoot() {
+        if (!rootStatus.granted && !rootShell.hasRoot()) {
+            logRepository.getDetailedRepository().add("SKIPPED", "APPLY", "Restart Settings skipped: root not granted")
+            return
+        }
+        val result = rootShell.run("am force-stop com.android.settings", 5)
+        if (result.exitCode == 0) {
+            logRepository.getDetailedRepository().add("SUCCESS", "APPLY", "Restarted Settings after apply", packageName = "com.android.settings")
+        } else {
+            logRepository.getDetailedRepository().add("ERROR", "APPLY", "Failed restarting Settings", packageName = "com.android.settings", detail = result.error.ifBlank { result.output })
+        }
+    }
 }

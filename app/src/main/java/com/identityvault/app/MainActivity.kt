@@ -8,6 +8,7 @@ import android.widget.Toast
 import com.identityvault.app.backup.BackupFilePicker
 import com.identityvault.app.backup.BackupManager
 import com.identityvault.app.backup.RestoreManager
+import com.identityvault.app.detector.DetectorBottomSheet
 import com.identityvault.app.status.StatusViewModel
 
 class MainActivity : Activity(), StatusScreen.Callbacks {
@@ -31,6 +32,7 @@ class MainActivity : Activity(), StatusScreen.Callbacks {
 
     override fun onShowMenu(anchor: View) {
         PopupMenu(this, anchor).apply {
+            menu.add("Detector")
             menu.add("Backup Profile")
             menu.add("Restore Profile")
             menu.add("Reset Profile")
@@ -38,6 +40,7 @@ class MainActivity : Activity(), StatusScreen.Callbacks {
             menu.add("About")
             setOnMenuItemClickListener { item ->
                 when (item.title.toString()) {
+                    "Detector" -> DetectorBottomSheet(this@MainActivity).show()
                     "Backup Profile" -> onExportBackup()
                     "Restore Profile" -> onImportBackup()
                     "Reset Profile" -> screen.resetProfile()
