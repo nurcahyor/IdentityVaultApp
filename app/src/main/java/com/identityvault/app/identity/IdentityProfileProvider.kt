@@ -5,6 +5,7 @@ import android.content.ContentValues
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import com.identityvault.app.slots.IdentitySlotRepository
 
 class IdentityProfileProvider : ContentProvider() {
     override fun onCreate(): Boolean = true
@@ -12,8 +13,16 @@ class IdentityProfileProvider : ContentProvider() {
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
         if (method != METHOD_GET_PROFILE) return null
         val context = context ?: return null
+        val packageName = extras?.getString("packageName").orEmpty()
+        val assigned = if (packageName.isNotBlank()) IdentitySlotRepository(context.applicationContext)
+            .assignedProfileForPackage(packageName)
+        else null
         return Bundle().apply {
-            putString(KEY_PROFILE_JSON, IdentityRepository(context.applicationContext).exportJson().toString())
+            putString(
+                KEY_PROFILE_JSON,
+                if (assigned != null) org.json.JSONObject().put("profile", assigned.toJson()).toString()
+                else IdentityRepository(context.applicationContext).exportJson().toString()
+            )
         }
     }
 

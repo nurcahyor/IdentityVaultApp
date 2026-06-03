@@ -2,6 +2,7 @@ package com.identityvault.hook
 
 import android.content.Context
 import android.os.Build
+import android.os.Bundle
 import de.robv.android.xposed.callbacks.XC_LoadPackage
 import org.json.JSONObject
 
@@ -14,7 +15,7 @@ object HookInstaller {
         logger.log("SUCCESS", "LSPOSED", "MainHook loaded for $packageName")
         logger.log("INFO", "LSPOSED", "Installing hooks for $packageName SDK $sdk")
 
-        val profile = loadProfile(context, session)
+        val profile = loadProfile(context, session, packageName)
         logger.marker(session)
         if (profile == null) {
             session.skipped("SKIPPED", "PROFILE", "Profile missing", "Profile")
@@ -54,9 +55,10 @@ object HookInstaller {
         .split("_")
         .joinToString("") { it.replaceFirstChar { char -> char.uppercaseChar() } }
 
-    private fun loadProfile(context: Context, session: HookSession): HookProfile? {
+    private fun loadProfile(context: Context, session: HookSession, packageName: String): HookProfile? {
         return runCatching {
-            val bundle = context.contentResolver.call(HookConstants.PROFILE_URI, "getProfile", null, null)
+            val extras = Bundle().apply { putString("packageName", packageName) }
+            val bundle = context.contentResolver.call(HookConstants.PROFILE_URI, "getProfile", null, extras)
                 ?: throw IllegalStateException("provider returned null")
             val raw = bundle.getString("profileJson").orEmpty()
             val profileJson = JSONObject(raw).optJSONObject("profile")
